@@ -90,3 +90,22 @@ test('ledger: computeWarungLedger and filterCustomers match prototype 6 customer
   assert.equal(searchBudi.length, 1);
   assert.equal(searchBudi[0].name, 'Pak Budi Santoso');
 });
+
+test('ledger: customer detail history merges utang and bayar entries sorted newest first', () => {
+  const customer = { id: 'c1', name: 'Pak Budi Santoso', phoneRaw: '081234567890', phone62: '6281234567890' };
+  const debts = [
+    { id: 'd1', customerId: 'c1', amountIdr: 200000, date: '2026-10-01', note: 'Sembako awal' },
+    { id: 'd2', customerId: 'c1', amountIdr: 150000, date: '2026-10-15', note: 'Beras 5kg' }
+  ];
+  const payments = [
+    { id: 'p1', customerId: 'c1', amountIdr: 100000, date: '2026-10-10', note: 'Cicilan tunai' }
+  ];
+  const summary = computeCustomerSummary(customer, debts, payments, '2026-10-24');
+  assert.equal(summary.history.length, 3);
+  assert.equal(summary.history[0].id, 'd2');
+  assert.equal(summary.history[0].type, 'debt');
+  assert.equal(summary.history[1].id, 'p1');
+  assert.equal(summary.history[1].type, 'payment');
+  assert.equal(summary.history[2].id, 'd1');
+  assert.equal(summary.balance, 250000);
+});

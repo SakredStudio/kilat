@@ -1,6 +1,7 @@
-// Kilat — Main Application Controller
+// Kilat — Main Application Controller (P0–P2)
 import { registerTranslations, t } from './lib/i18n.js';
 import { rp, avatarInitials, formatDateId } from './lib/format.js';
+import { formatLocalPhone as fmtPhone } from './lib/phone.js';
 import {
   loadState,
   saveState,
@@ -8,17 +9,25 @@ import {
   updateSettings,
   canAddCustomer,
   addCustomer,
+  deleteCustomer,
+  addDebt,
+  addPayment,
+  undoLastAction,
+  getUndoMeta,
+  clearUndo,
   seedDemoData
 } from './lib/store.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 
 let appState = null;
+let undoTimer = null;
 let uiState = {
   screen: 'setup', // 'setup' | 'list' | 'detail' | 'reminder' | 'card' | 'settings'
   selectedCustomerId: null,
   searchQuery: '',
   riskFilter: 'Semua',
   activeSheet: null, // 'addCustomer' | 'addDebt' | 'recordPay' | 'proGate' | null
+  toastMessage: null,
   reminderTone: 'sopan',
   customMessage: '',
   messageEdited: false,
@@ -31,6 +40,16 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function showUndoToast(message) {
+  if (undoTimer) clearTimeout(undoTimer);
+  uiState.toastMessage = message;
+  undoTimer = setTimeout(() => {
+    uiState.toastMessage = null;
+    clearUndo();
+    renderApp();
+  }, 5000);
 }
 
 async function loadDictionaries() {
@@ -257,6 +276,138 @@ function renderCustomerListScreen(lang, ledger) {
   `;
 }
 
+function renderCustomerDetailScreen(lang, customer) {
+  if (!customer) {
+    return renderCustomerListScreen(lang, computeWarungLedger(appState));
+  }
+  const badgeClass = customer.isPaid ? 'risk-Lunas' : `risk-${customer.risk}`;
+  const badgeLabel = customer.isPaid ? t(lang, 'risk_paid') : customer.risk;
+  const amountColor =
+    customer.risk === 'Tinggi'
+      ? 'var(--red)'
+      : customer.risk === 'Sedang'
+        ? 'var(--amber)'
+        : 'var(--primary-dark)';
+
+  return `
+    <div class="screen-body" data-screen="detail">
+      <div class="topbar">
+        <button type="button" class="back-btn" id="btn-back-to-list" aria-label="Kembali">←</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:16px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            ${escapeHtml(customer.name)}
+          </div>
+          <div style="font-size:12px; color:var(--text3);">
+            ${escapeHtml(fmtPhone(customer.phone62 || customer.phoneRaw))}
+          </div>
+        </div>
+        <span class="risk-badge ${badgeClass}">
+          <span class="risk-dot"></span>${escapeHtml(badgeLabel)}
+        </span>
+      </div>
+
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <!-- Balance Card -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+            <div>
+              <div style="font-size:12px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.3px;">
+                ${escapeHtml(t(lang, 'customer_balance_label'))}
+              </div>
+              <div id="detail-balance-value" style="font-family:var(--font-display); font-size:28px; color:${amountColor}; margin-top:4px;">
+                ${escapeHtml(rp(customer.balance, { spaced: true }))}
+              </div>
+            </div>
+            ${
+              !customer.isPaid
+                ? `<div style="font-size:12px; font-weight:600; color:var(--text2); background:var(--bg2); padding:5px 10px; border-radius:99px;">
+                     ${escapeHtml(t(lang, 'reminder_overdue_days', { hari: customer.daysOverdue }))}
+                   </div>`
+                : ''
+            }
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+            <div>
+              <div style="font-size:11px; color:var(--text3);">${escapeHtml(t(lang, 'customer_total_debt_label'))}</div>
+              <div style="font-size:14px; font-weight:700; color:var(--text); margin-top:2px;">
+                ${escapeHtml(rp(customer.totalDebt, { spaced: true }))}
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--text3);">${escapeHtml(t(lang, 'customer_total_paid_label'))}</div>
+              <div style="font-size:14px; font-weight:700; color:var(--primary-dark); margin-top:2px;">
+                ${escapeHtml(rp(customer.totalPaid, { spaced: true }))}
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;">
+            <button type="button" id="btn-open-add-debt" class="btn-secondary" style="border-color:var(--amber); color:var(--text);">
+              ${escapeHtml(t(lang, 'customer_add_debt_btn'))}
+            </button>
+            <button type="button" id="btn-open-record-pay" class="btn-primary">
+              ${escapeHtml(t(lang, 'customer_record_pay_btn'))}
+            </button>
+          </div>
+
+          <div style="margin-top:10px;">
+            <button type="button" id="btn-go-reminder" class="btn-primary btn-wa">
+              ${escapeHtml(t(lang, 'customer_send_wa_btn'))}
+            </button>
+          </div>
+        </div>
+
+        <!-- Ledger History -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px; flex:1;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:10px;">
+            ${escapeHtml(t(lang, 'customer_ledger_title'))}
+          </div>
+          ${
+            customer.history.length === 0
+              ? `<p style="font-size:13px; color:var(--text3); padding:16px 0; text-align:center;">
+                   ${escapeHtml(t(lang, 'customer_ledger_empty'))}
+                 </p>`
+              : `<div style="display:flex; flex-direction:column; gap:8px;">
+                   ${customer.history
+                     .map((entry) => {
+                       const isDebt = entry.type === 'debt';
+                       const typeLabel = isDebt ? t(lang, 'entry_type_debt') : t(lang, 'entry_type_payment');
+                       const badgeStyle = isDebt
+                         ? 'background:var(--amber-light); color:var(--amber);'
+                         : 'background:var(--primary-light); color:var(--primary-dark);';
+                       const amtColor = isDebt ? 'var(--red)' : 'var(--primary-dark)';
+                       const sign = isDebt ? '+' : '−';
+                       return `
+                         <div class="ledger-entry-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:var(--bg); border-radius:var(--radius-sm); border:1px solid var(--border);">
+                           <div style="min-width:0; flex:1;">
+                             <div style="display:flex; align-items:center; gap:6px;">
+                               <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:99px; ${badgeStyle}">
+                                 ${escapeHtml(typeLabel)}
+                               </span>
+                               <span style="font-size:12px; color:var(--text3);">
+                                 ${escapeHtml(formatDateId(entry.date))}
+                               </span>
+                             </div>
+                             <div style="font-size:13px; color:var(--text); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                               ${escapeHtml(entry.note || typeLabel)}
+                             </div>
+                           </div>
+                           <div style="font-weight:700; font-size:14px; color:${amtColor}; flex-shrink:0; margin-left:10px;">
+                             ${sign} ${escapeHtml(rp(entry.amountIdr, { spaced: true }))}
+                           </div>
+                         </div>
+                       `;
+                     })
+                     .join('')}
+                 </div>`
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderAddCustomerSheet(lang) {
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
@@ -303,6 +454,100 @@ function renderAddCustomerSheet(lang) {
   `;
 }
 
+function renderAddDebtSheet(lang, customer) {
+  const today = new Date().toISOString().slice(0, 10);
+  const quickAmounts = [25000, 50000, 100000, 200000];
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <form class="sheet-panel" id="form-add-debt">
+        <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
+          ${escapeHtml(t(lang, 'sheet_add_debt_title'))} — ${escapeHtml(customer?.name || '')}
+        </h2>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${quickAmounts
+            .map(
+              (amt) =>
+                `<button type="button" class="quick-amt-btn" data-amt="${amt}"
+                  style="padding:6px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); font-size:12px; font-weight:600; color:var(--text2); min-height:44px;">
+                  +${escapeHtml(rp(amt))}
+                </button>`
+            )
+            .join('')}
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="debt-amount">${escapeHtml(t(lang, 'sheet_amount_label'))}</label>
+          <input id="debt-amount" name="amountIdr" class="field-input" type="number" min="100" step="500" required
+            placeholder="${escapeHtml(t(lang, 'sheet_amount_placeholder'))}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="debt-note">${escapeHtml(t(lang, 'sheet_note_label'))}</label>
+          <input id="debt-note" name="note" class="field-input" type="text"
+            placeholder="${escapeHtml(t(lang, 'sheet_note_debt_placeholder'))}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="debt-date">${escapeHtml(t(lang, 'sheet_date_label'))}</label>
+          <input id="debt-date" name="date" class="field-input" type="date" value="${today}" required />
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">
+            ${escapeHtml(t(lang, 'sheet_cancel_btn'))}
+          </button>
+          <button type="submit" class="btn-primary" style="flex:1;">
+            ${escapeHtml(t(lang, 'sheet_save_btn'))}
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function renderRecordPaySheet(lang, customer) {
+  const today = new Date().toISOString().slice(0, 10);
+  const currentBalance = customer?.balance || 0;
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <form class="sheet-panel" id="form-record-pay">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
+            ${escapeHtml(t(lang, 'sheet_record_pay_title'))}
+          </h2>
+          ${
+            currentBalance > 0
+              ? `<button type="button" id="btn-fill-full-balance" data-balance="${currentBalance}"
+                   style="padding:6px 12px; border-radius:8px; border:1px solid var(--primary); background:var(--primary-light); color:var(--primary-dark); font-size:12px; font-weight:700; min-height:44px;">
+                   ${escapeHtml(t(lang, 'sheet_full_pay_btn'))} (${escapeHtml(rp(currentBalance))})
+                 </button>`
+              : ''
+          }
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="pay-amount">${escapeHtml(t(lang, 'sheet_amount_label'))}</label>
+          <input id="pay-amount" name="amountIdr" class="field-input" type="number" min="100" step="500" required
+            value="${currentBalance > 0 ? currentBalance : ''}"
+            placeholder="${escapeHtml(t(lang, 'sheet_amount_placeholder'))}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="pay-note">${escapeHtml(t(lang, 'sheet_note_label'))}</label>
+          <input id="pay-note" name="note" class="field-input" type="text"
+            placeholder="${escapeHtml(t(lang, 'sheet_note_pay_placeholder'))}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="pay-date">${escapeHtml(t(lang, 'sheet_date_label'))}</label>
+          <input id="pay-date" name="date" class="field-input" type="date" value="${today}" required />
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">
+            ${escapeHtml(t(lang, 'sheet_cancel_btn'))}
+          </button>
+          <button type="submit" class="btn-primary" style="flex:1;">
+            ${escapeHtml(t(lang, 'sheet_save_btn'))}
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
 function renderProGateSheet(lang) {
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
@@ -323,6 +568,18 @@ function renderProGateSheet(lang) {
           </button>
         </div>
       </div>
+    </div>
+  `;
+}
+
+function renderUndoToast(lang) {
+  if (!uiState.toastMessage || !getUndoMeta()) return '';
+  return `
+    <div class="undo-toast" role="status" aria-live="polite">
+      <span style="font-size:13px; font-weight:500;">${escapeHtml(uiState.toastMessage)}</span>
+      <button type="button" id="btn-undo-action" class="undo-toast-btn">
+        ${escapeHtml(t(lang, 'undo_btn'))}
+      </button>
     </div>
   `;
 }
@@ -360,10 +617,13 @@ export function renderApp() {
 
   const lang = appState.settings.lang;
   const ledger = computeWarungLedger(appState);
+  const selectedCustomer = ledger.customers.find((c) => c.id === uiState.selectedCustomerId) || null;
 
   let screenHtml = '';
   if (uiState.screen === 'setup') {
     screenHtml = renderSetupScreen(lang);
+  } else if (uiState.screen === 'detail' && selectedCustomer) {
+    screenHtml = renderCustomerDetailScreen(lang, selectedCustomer);
   } else {
     screenHtml = renderCustomerListScreen(lang, ledger);
   }
@@ -371,20 +631,25 @@ export function renderApp() {
   let sheetHtml = '';
   if (uiState.activeSheet === 'addCustomer') {
     sheetHtml = renderAddCustomerSheet(lang);
+  } else if (uiState.activeSheet === 'addDebt' && selectedCustomer) {
+    sheetHtml = renderAddDebtSheet(lang, selectedCustomer);
+  } else if (uiState.activeSheet === 'recordPay' && selectedCustomer) {
+    sheetHtml = renderRecordPaySheet(lang, selectedCustomer);
   } else if (uiState.activeSheet === 'proGate') {
     sheetHtml = renderProGateSheet(lang);
   }
 
   root.innerHTML = `
     ${screenHtml}
+    ${renderUndoToast(lang)}
     ${renderBottomNav(lang)}
     ${sheetHtml}
   `;
 
-  bindEvents();
+  bindEvents(selectedCustomer, lang);
 }
 
-function bindEvents() {
+function bindEvents(selectedCustomer, lang) {
   const root = document.getElementById('app');
   if (!root) return;
 
@@ -445,6 +710,123 @@ function bindEvents() {
       renderApp();
     });
   });
+
+  // Customer row cards -> open detail screen
+  root.querySelectorAll('.customer-row-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      uiState.selectedCustomerId = card.getAttribute('data-customer-id');
+      uiState.screen = 'detail';
+      renderApp();
+    });
+  });
+
+  // Back to list from detail
+  const backToListBtn = root.querySelector('#btn-back-to-list');
+  if (backToListBtn) {
+    backToListBtn.addEventListener('click', () => {
+      uiState.screen = 'list';
+      renderApp();
+    });
+  }
+
+  // Detail action buttons
+  const openAddDebtBtn = root.querySelector('#btn-open-add-debt');
+  if (openAddDebtBtn) {
+    openAddDebtBtn.addEventListener('click', () => {
+      uiState.activeSheet = 'addDebt';
+      renderApp();
+    });
+  }
+
+  const openRecordPayBtn = root.querySelector('#btn-open-record-pay');
+  if (openRecordPayBtn) {
+    openRecordPayBtn.addEventListener('click', () => {
+      uiState.activeSheet = 'recordPay';
+      renderApp();
+    });
+  }
+
+  const goReminderBtn = root.querySelector('#btn-go-reminder');
+  if (goReminderBtn) {
+    goReminderBtn.addEventListener('click', () => {
+      uiState.reminderTone = appState.settings.tone || 'sopan';
+      uiState.messageEdited = false;
+      uiState.sentFeedback = false;
+      uiState.screen = 'reminder';
+      renderApp();
+    });
+  }
+
+  // Quick amount chips in Add Debt sheet
+  root.querySelectorAll('.quick-amt-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const amtInput = root.querySelector('#debt-amount');
+      if (amtInput) {
+        amtInput.value = btn.getAttribute('data-amt') || '';
+      }
+    });
+  });
+
+  // Fill full balance button in Record Pay sheet
+  const fullPayBtn = root.querySelector('#btn-fill-full-balance');
+  if (fullPayBtn) {
+    fullPayBtn.addEventListener('click', () => {
+      const payInput = root.querySelector('#pay-amount');
+      if (payInput) {
+        payInput.value = fullPayBtn.getAttribute('data-balance') || '';
+      }
+    });
+  }
+
+  // Submit Add Debt sheet
+  const addDebtForm = root.querySelector('#form-add-debt');
+  if (addDebtForm && selectedCustomer) {
+    addDebtForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(addDebtForm);
+      appState = addDebt(appState, {
+        customerId: selectedCustomer.id,
+        amountIdr: fd.get('amountIdr'),
+        note: fd.get('note'),
+        date: fd.get('date')
+      });
+      uiState.activeSheet = null;
+      showUndoToast(t(lang, 'undo_toast_debt'));
+      renderApp();
+    });
+  }
+
+  // Submit Record Payment sheet
+  const recordPayForm = root.querySelector('#form-record-pay');
+  if (recordPayForm && selectedCustomer) {
+    recordPayForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(recordPayForm);
+      appState = addPayment(appState, {
+        customerId: selectedCustomer.id,
+        amountIdr: fd.get('amountIdr'),
+        note: fd.get('note'),
+        date: fd.get('date')
+      });
+      uiState.activeSheet = null;
+      showUndoToast(t(lang, 'undo_toast_payment'));
+      renderApp();
+    });
+  }
+
+  // Undo toast button
+  const undoBtn = root.querySelector('#btn-undo-action');
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+      const restored = undoLastAction();
+      if (restored) {
+        appState = restored;
+      }
+      if (undoTimer) clearTimeout(undoTimer);
+      uiState.toastMessage = null;
+      renderApp();
+    });
+  }
 
   // Seed demo data button when empty
   const seedBtn = root.querySelector('#btn-seed-demo-empty');
@@ -516,7 +898,6 @@ function bindEvents() {
 export async function initApp() {
   await loadDictionaries();
   appState = loadState();
-  // Seed initial 6 customers on first run if empty so warung owner sees prototype right away
   if (appState.customers.length === 0 && !appState.settings.hasCompletedSetup) {
     appState = seedDemoData(appState, globalThis.localStorage, { count: 6 });
     uiState.screen = 'setup';
