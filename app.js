@@ -1,4 +1,4 @@
-// Kilat — Main Application Controller (P0–P3)
+// Kilat — Main Application Controller (P0–P4)
 import { registerTranslations, t } from './lib/i18n.js';
 import { rp, avatarInitials, formatDateId } from './lib/format.js';
 import { formatLocalPhone as fmtPhone } from './lib/phone.js';
@@ -18,6 +18,11 @@ import {
 } from './lib/store.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 import { buildReminderMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
+import {
+  buildShareCardModel,
+  drawShareCardToCanvas,
+  shareOrDownloadCard
+} from './lib/share-card.js';
 
 let appState = null;
 let undoTimer = null;
@@ -472,7 +477,6 @@ function renderReminderScreen(lang, customer) {
       </div>
 
       <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
-        <!-- Customer Summary Pill -->
         <div style="background:${pillBg}; border:1.5px solid ${pillBorder}; border-radius:var(--radius-sm); padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
           <div>
             <div style="font-size:12px; color:var(--text2);">
@@ -487,7 +491,6 @@ function renderReminderScreen(lang, customer) {
           </div>
         </div>
 
-        <!-- Tone Picker -->
         <div>
           <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px;">
             ${escapeHtml(t(lang, 'reminder_tone_label'))}
@@ -512,7 +515,6 @@ function renderReminderScreen(lang, customer) {
           </div>
         </div>
 
-        <!-- WhatsApp Bubble Preview -->
         <div style="background:#E5DDD5; border-radius:var(--radius-sm); overflow:hidden; border:1px solid var(--border);">
           <div style="background:#075E54; padding:10px 14px; display:flex; align-items:center; gap:10px;">
             <div style="width:32px; height:32px; border-radius:50%; background:#25D366; display:flex; align-items:center; justify-content:center; font-size:15px;">
@@ -538,7 +540,6 @@ function renderReminderScreen(lang, customer) {
           </div>
         </div>
 
-        <!-- Editable Message Box -->
         <div class="field-group">
           <label class="field-label" for="reminder-custom-textarea">
             ${escapeHtml(t(lang, 'reminder_edit_label'))}
@@ -547,7 +548,6 @@ function renderReminderScreen(lang, customer) {
             style="resize:vertical; font-size:13px; line-height:1.5;">${escapeHtml(currentMsg)}</textarea>
         </div>
 
-        <!-- Send to WhatsApp & View Summary Card actions -->
         <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
           <a id="btn-send-wa-link" href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer"
             class="btn-primary btn-wa tap-target">
@@ -556,6 +556,114 @@ function renderReminderScreen(lang, customer) {
           </a>
           <button type="button" id="btn-show-card" class="btn-secondary">
             ${escapeHtml(t(lang, 'reminder_share_card_btn'))}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderShareCardScreen(lang) {
+  const model = buildShareCardModel(appState);
+  return `
+    <div class="screen-body" data-screen="card">
+      <div class="topbar">
+        <button type="button" class="back-btn" id="btn-back-from-card" aria-label="Kembali">←</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:15px; color:var(--text);">
+            ${escapeHtml(t(lang, 'card_title'))}
+          </div>
+          <div style="font-size:12px; color:var(--text3);">
+            ${escapeHtml(t(lang, 'card_subtitle'))}
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <!-- HTML preview + hidden/scaled 1080x1350 canvas -->
+        <div style="background:linear-gradient(145deg, #092228 0%, #10353E 100%); border-radius:20px; padding:20px 18px; color:#fff; box-shadow:0 8px 28px rgba(0,0,0,0.22); position:relative; overflow:hidden;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:14px;">
+            <div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.55); font-weight:600; text-transform:uppercase; letter-spacing:0.6px;">
+                ${escapeHtml(model.dateLabel)}
+              </div>
+              <div style="font-family:var(--font-display); font-size:20px; color:#fff; margin-top:2px;">
+                ${escapeHtml(model.warungName)}
+              </div>
+            </div>
+            <div style="background:rgba(45,212,191,0.18); border:1px solid rgba(45,212,191,0.35); border-radius:99px; padding:4px 10px; font-size:10px; font-weight:700; color:#5EEAD4;">
+              ⚡ ${escapeHtml(t(lang, 'card_report_badge'))}
+            </div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.08); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+            <div style="font-size:11px; color:rgba(255,255,255,0.65);">
+              ${escapeHtml(t(lang, 'card_total_label'))}
+            </div>
+            <div style="font-family:var(--font-display); font-size:26px; color:#5EEAD4; margin-top:2px;">
+              ${escapeHtml(model.totalFormatted)}
+            </div>
+            <div style="display:flex; gap:14px; margin-top:6px;">
+              <span style="font-size:11px; color:rgba(255,255,255,0.65);">
+                ${escapeHtml(t(lang, 'card_active_debtors', { count: model.activeCount }))}
+              </span>
+              <span style="font-size:11px; color:#FCD34D;">
+                🔴 ${escapeHtml(t(lang, 'card_overdue_30', { count: model.highRiskCount }))}
+              </span>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:7px; margin-bottom:14px;">
+            ${model.topDebtors
+              .map(
+                (c) => `
+                  <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.06); border-radius:9px; padding:8px 11px;">
+                    <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                      <span style="width:20px; height:20px; border-radius:50%; background:rgba(255,255,255,0.14); display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:rgba(255,255,255,0.85); flex-shrink:0;">
+                        ${c.rank}
+                      </span>
+                      <span style="font-size:13px; font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        ${escapeHtml(c.name)}
+                      </span>
+                    </div>
+                    <span style="font-size:13px; font-weight:700; color:${c.risk === 'Tinggi' ? '#FCA5A5' : '#FCD34D'}; flex-shrink:0; margin-left:8px;">
+                      ${escapeHtml(c.balanceFormatted)}
+                    </span>
+                  </div>
+                `
+              )
+              .join('')}
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; padding-top:10px; border-top:1px solid rgba(255,255,255,0.12); font-size:11px; color:rgba(255,255,255,0.5);">
+            <span id="card-watermark-line">
+              ${escapeHtml(model.showWatermark ? model.watermarkText : `Laporan Resmi ${model.warungName}`)}
+            </span>
+          </div>
+        </div>
+
+        <canvas id="share-card-canvas" width="1080" height="1350" style="display:none;"></canvas>
+
+        <div style="background:var(--card); border-radius:var(--radius-sm); border:1px solid var(--border); padding:14px; display:flex; flex-direction:column; gap:6px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2);">
+            ${escapeHtml(t(lang, 'card_how_to_share'))}
+          </div>
+          <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'card_step_1'))}</div>
+          <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'card_step_2'))}</div>
+          <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'card_step_3'))}</div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
+          <button type="button" id="btn-share-card-native" class="btn-primary btn-wa">
+            <span>📤</span>
+            <span>${escapeHtml(t(lang, 'card_share_wa_cta'))}</span>
+          </button>
+          <button type="button" id="btn-download-card-png" class="btn-secondary">
+            <span>⬇️</span>
+            <span>${escapeHtml(t(lang, 'card_download_cta'))}</span>
+          </button>
+          <button type="button" id="btn-back-from-card-bottom" class="btn-secondary">
+            ${escapeHtml(t(lang, 'card_back_btn'))}
           </button>
         </div>
       </div>
@@ -781,6 +889,8 @@ export function renderApp() {
     screenHtml = renderCustomerDetailScreen(lang, selectedCustomer);
   } else if (uiState.screen === 'reminder' && selectedCustomer) {
     screenHtml = renderReminderScreen(lang, selectedCustomer);
+  } else if (uiState.screen === 'card') {
+    screenHtml = renderShareCardScreen(lang);
   } else {
     screenHtml = renderCustomerListScreen(lang, ledger);
   }
@@ -802,6 +912,14 @@ export function renderApp() {
     ${renderBottomNav(lang)}
     ${sheetHtml}
   `;
+
+  // Pre-render the 1080x1350 canvas if on the Share Card screen
+  if (uiState.screen === 'card') {
+    const canvas = root.querySelector('#share-card-canvas');
+    if (canvas) {
+      drawShareCardToCanvas(canvas, buildShareCardModel(appState));
+    }
+  }
 
   bindEvents(selectedCustomer, lang);
 }
@@ -962,6 +1080,43 @@ function bindEvents(selectedCustomer, lang) {
     showCardBtn.addEventListener('click', () => {
       uiState.screen = 'card';
       renderApp();
+    });
+  }
+
+  // Share Card screen events
+  const backFromCardBtn = root.querySelector('#btn-back-from-card');
+  if (backFromCardBtn) {
+    backFromCardBtn.addEventListener('click', () => {
+      uiState.screen = selectedCustomer ? 'reminder' : 'list';
+      renderApp();
+    });
+  }
+
+  const backFromCardBottomBtn = root.querySelector('#btn-back-from-card-bottom');
+  if (backFromCardBottomBtn) {
+    backFromCardBottomBtn.addEventListener('click', () => {
+      uiState.screen = selectedCustomer ? 'reminder' : 'list';
+      renderApp();
+    });
+  }
+
+  const shareCardNativeBtn = root.querySelector('#btn-share-card-native');
+  if (shareCardNativeBtn) {
+    shareCardNativeBtn.addEventListener('click', async () => {
+      const canvas = root.querySelector('#share-card-canvas');
+      if (canvas) {
+        await shareOrDownloadCard(canvas, buildShareCardModel(appState), { forceDownload: false });
+      }
+    });
+  }
+
+  const downloadCardPngBtn = root.querySelector('#btn-download-card-png');
+  if (downloadCardPngBtn) {
+    downloadCardPngBtn.addEventListener('click', async () => {
+      const canvas = root.querySelector('#share-card-canvas');
+      if (canvas) {
+        await shareOrDownloadCard(canvas, buildShareCardModel(appState), { forceDownload: true });
+      }
     });
   }
 
