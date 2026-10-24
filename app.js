@@ -1,4 +1,4 @@
-// Kilat — Main Application Controller (P0–P2)
+// Kilat — Main Application Controller (P0–P3)
 import { registerTranslations, t } from './lib/i18n.js';
 import { rp, avatarInitials, formatDateId } from './lib/format.js';
 import { formatLocalPhone as fmtPhone } from './lib/phone.js';
@@ -9,7 +9,6 @@ import {
   updateSettings,
   canAddCustomer,
   addCustomer,
-  deleteCustomer,
   addDebt,
   addPayment,
   undoLastAction,
@@ -18,6 +17,7 @@ import {
   seedDemoData
 } from './lib/store.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
+import { buildReminderMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
 
 let appState = null;
 let undoTimer = null;
@@ -40,6 +40,11 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function formatWaBoldHtml(str) {
+  const escaped = escapeHtml(str);
+  return escaped.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
 }
 
 function showUndoToast(message) {
@@ -307,7 +312,6 @@ function renderCustomerDetailScreen(lang, customer) {
       </div>
 
       <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
-        <!-- Balance Card -->
         <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:16px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
             <div>
@@ -358,7 +362,6 @@ function renderCustomerDetailScreen(lang, customer) {
           </div>
         </div>
 
-        <!-- Ledger History -->
         <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px; flex:1;">
           <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:10px;">
             ${escapeHtml(t(lang, 'customer_ledger_title'))}
@@ -402,6 +405,158 @@ function renderCustomerDetailScreen(lang, customer) {
                      .join('')}
                  </div>`
           }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderReminderScreen(lang, customer) {
+  if (!customer) {
+    return renderCustomerListScreen(lang, computeWarungLedger(appState));
+  }
+  const w = appState.warung;
+  const activeTone = uiState.reminderTone || appState.settings.tone || 'sopan';
+  const generatedMsg = buildReminderMessage({
+    tone: activeTone,
+    nama: customer.name,
+    jumlah: customer.balance,
+    hari: customer.daysOverdue,
+    warung: w.name
+  });
+
+  const currentMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : generatedMsg;
+  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, currentMsg);
+  const firstName = customer.name.split(' ')[0] || customer.name;
+
+  const tones = [
+    { id: 'sopan', label: t(lang, 'tone_sopan_label'), desc: t(lang, 'tone_sopan_desc') },
+    { id: 'singkat', label: t(lang, 'tone_singkat_label'), desc: t(lang, 'tone_singkat_desc') },
+    { id: 'tegas', label: t(lang, 'tone_tegas_label'), desc: t(lang, 'tone_tegas_desc') }
+  ];
+
+  const pillBg =
+    customer.risk === 'Tinggi'
+      ? 'var(--red-light)'
+      : customer.risk === 'Sedang'
+        ? 'var(--amber-light)'
+        : 'var(--primary-light)';
+  const pillBorder =
+    customer.risk === 'Tinggi'
+      ? 'var(--red)'
+      : customer.risk === 'Sedang'
+        ? 'var(--amber)'
+        : 'var(--primary)';
+  const pillColor =
+    customer.risk === 'Tinggi'
+      ? 'var(--red)'
+      : customer.risk === 'Sedang'
+        ? 'var(--amber)'
+        : 'var(--primary-dark)';
+
+  return `
+    <div class="screen-body" data-screen="reminder">
+      <div class="topbar">
+        <button type="button" class="back-btn" id="btn-back-to-detail" aria-label="Kembali">←</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:15px; color:var(--text);">
+            ${escapeHtml(t(lang, 'reminder_title'))}
+          </div>
+          <div style="font-size:12px; color:var(--text3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            ${escapeHtml(customer.name)} · ${escapeHtml(rp(customer.balance, { spaced: true }))}
+          </div>
+        </div>
+        <span class="risk-badge risk-${customer.risk}">
+          <span class="risk-dot"></span>${escapeHtml(customer.risk)}
+        </span>
+      </div>
+
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <!-- Customer Summary Pill -->
+        <div style="background:${pillBg}; border:1.5px solid ${pillBorder}; border-radius:var(--radius-sm); padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div>
+            <div style="font-size:12px; color:var(--text2);">
+              ${escapeHtml(t(lang, 'reminder_overdue_days', { hari: customer.daysOverdue }))}
+            </div>
+            <div style="font-size:13px; color:var(--text2); margin-top:2px;">
+              ${escapeHtml(customer.note || w.name)}
+            </div>
+          </div>
+          <div style="font-family:var(--font-display); font-size:22px; color:${pillColor}; flex-shrink:0;">
+            ${escapeHtml(rp(customer.balance, { spaced: true }))}
+          </div>
+        </div>
+
+        <!-- Tone Picker -->
+        <div>
+          <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px;">
+            ${escapeHtml(t(lang, 'reminder_tone_label'))}
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+            ${tones
+              .map((tn) => {
+                const active = activeTone === tn.id;
+                return `
+                  <button type="button" class="tone-picker-btn" data-tone="${tn.id}"
+                    style="padding:10px 6px; border-radius:var(--radius-sm); border:2px solid ${active ? 'var(--primary)' : 'var(--border)'}; background:${active ? 'var(--primary-light)' : 'var(--card)'}; display:flex; flex-direction:column; align-items:center; gap:3px; min-height:56px;">
+                    <span style="font-size:13px; font-weight:700; color:${active ? 'var(--primary-dark)' : 'var(--text)'};">
+                      ${escapeHtml(tn.label)}
+                    </span>
+                    <span style="font-size:11px; color:var(--text3);">
+                      ${escapeHtml(tn.desc)}
+                    </span>
+                  </button>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+
+        <!-- WhatsApp Bubble Preview -->
+        <div style="background:#E5DDD5; border-radius:var(--radius-sm); overflow:hidden; border:1px solid var(--border);">
+          <div style="background:#075E54; padding:10px 14px; display:flex; align-items:center; gap:10px;">
+            <div style="width:32px; height:32px; border-radius:50%; background:#25D366; display:flex; align-items:center; justify-content:center; font-size:15px;">
+              💬
+            </div>
+            <div>
+              <div style="font-size:13px; font-weight:700; color:#fff;">
+                ${escapeHtml(t(lang, 'reminder_wa_preview_header'))}
+              </div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.78);">
+                ${escapeHtml(fmtPhone(customer.phone62 || customer.phoneRaw))}
+              </div>
+            </div>
+          </div>
+
+          <div style="padding:12px;">
+            <div style="background:#DCF8C6; border-radius:8px 8px 2px 8px; padding:10px 12px; box-shadow:0 1px 2px rgba(0,0,0,0.12);">
+              <div id="wa-bubble-preview-text" style="font-size:13px; color:#111; line-height:1.6; white-space:pre-wrap; word-break:break-word;">${formatWaBoldHtml(currentMsg)}</div>
+              <div style="text-align:right; margin-top:4px; font-size:10px; color:#667781;">
+                09:41 ✓✓
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Editable Message Box -->
+        <div class="field-group">
+          <label class="field-label" for="reminder-custom-textarea">
+            ${escapeHtml(t(lang, 'reminder_edit_label'))}
+          </label>
+          <textarea id="reminder-custom-textarea" class="field-input" rows="4"
+            style="resize:vertical; font-size:13px; line-height:1.5;">${escapeHtml(currentMsg)}</textarea>
+        </div>
+
+        <!-- Send to WhatsApp & View Summary Card actions -->
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
+          <a id="btn-send-wa-link" href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer"
+            class="btn-primary btn-wa tap-target">
+            <span>${uiState.sentFeedback ? '✓' : '💬'}</span>
+            <span>${escapeHtml(uiState.sentFeedback ? t(lang, 'reminder_Sent_wa_cta') : t(lang, 'reminder_send_wa_cta', { nama: firstName }))}</span>
+          </a>
+          <button type="button" id="btn-show-card" class="btn-secondary">
+            ${escapeHtml(t(lang, 'reminder_share_card_btn'))}
+          </button>
         </div>
       </div>
     </div>
@@ -624,6 +779,8 @@ export function renderApp() {
     screenHtml = renderSetupScreen(lang);
   } else if (uiState.screen === 'detail' && selectedCustomer) {
     screenHtml = renderCustomerDetailScreen(lang, selectedCustomer);
+  } else if (uiState.screen === 'reminder' && selectedCustomer) {
+    screenHtml = renderReminderScreen(lang, selectedCustomer);
   } else {
     screenHtml = renderCustomerListScreen(lang, ledger);
   }
@@ -753,6 +910,57 @@ function bindEvents(selectedCustomer, lang) {
       uiState.messageEdited = false;
       uiState.sentFeedback = false;
       uiState.screen = 'reminder';
+      renderApp();
+    });
+  }
+
+  // Reminder screen events
+  const backToDetailBtn = root.querySelector('#btn-back-to-detail');
+  if (backToDetailBtn) {
+    backToDetailBtn.addEventListener('click', () => {
+      uiState.screen = 'detail';
+      renderApp();
+    });
+  }
+
+  root.querySelectorAll('.tone-picker-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      uiState.reminderTone = btn.getAttribute('data-tone') || 'sopan';
+      uiState.messageEdited = false;
+      uiState.sentFeedback = false;
+      renderApp();
+    });
+  });
+
+  const reminderTextarea = root.querySelector('#reminder-custom-textarea');
+  if (reminderTextarea && selectedCustomer) {
+    reminderTextarea.addEventListener('input', (e) => {
+      uiState.customMessage = e.target.value;
+      uiState.messageEdited = true;
+      const fullMsg = ensureShareLine(uiState.customMessage);
+      const previewBubble = root.querySelector('#wa-bubble-preview-text');
+      if (previewBubble) {
+        previewBubble.innerHTML = formatWaBoldHtml(fullMsg);
+      }
+      const waLinkEl = root.querySelector('#btn-send-wa-link');
+      if (waLinkEl) {
+        waLinkEl.setAttribute('href', buildWaLink(selectedCustomer.phone62 || selectedCustomer.phoneRaw, fullMsg));
+      }
+    });
+  }
+
+  const sendWaLinkEl = root.querySelector('#btn-send-wa-link');
+  if (sendWaLinkEl) {
+    sendWaLinkEl.addEventListener('click', () => {
+      uiState.sentFeedback = true;
+      setTimeout(() => renderApp(), 200);
+    });
+  }
+
+  const showCardBtn = root.querySelector('#btn-show-card');
+  if (showCardBtn) {
+    showCardBtn.addEventListener('click', () => {
+      uiState.screen = 'card';
       renderApp();
     });
   }
