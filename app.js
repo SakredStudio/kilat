@@ -1,6 +1,37 @@
-// Kilat — Main Application Controller (P0 shell, wired through P1–P5)
+// Kilat — Main Application Controller
 import { registerTranslations, t } from './lib/i18n.js';
-import { loadState, saveState } from './lib/store.js';
+import { rp, avatarInitials, formatDateId } from './lib/format.js';
+import {
+  loadState,
+  saveState,
+  updateWarung,
+  updateSettings,
+  canAddCustomer,
+  addCustomer,
+  seedDemoData
+} from './lib/store.js';
+import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
+
+let appState = null;
+let uiState = {
+  screen: 'setup', // 'setup' | 'list' | 'detail' | 'reminder' | 'card' | 'settings'
+  selectedCustomerId: null,
+  searchQuery: '',
+  riskFilter: 'Semua',
+  activeSheet: null, // 'addCustomer' | 'addDebt' | 'recordPay' | 'proGate' | null
+  reminderTone: 'sopan',
+  customMessage: '',
+  messageEdited: false,
+  sentFeedback: false
+};
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 async function loadDictionaries() {
   const [idRes, enRes] = await Promise.all([
@@ -12,15 +43,488 @@ async function loadDictionaries() {
   registerTranslations('en', enDict);
 }
 
+function applyTheme() {
+  if (!appState) return;
+  if (appState.settings.darkMode) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+}
+
+function renderSetupScreen(lang) {
+  const w = appState.warung;
+  const previewName = escapeHtml(w.name || 'Warung Anda');
+  return `
+    <div class="screen-body" data-screen="setup">
+      <header class="hero-header">
+        <div class="step-badge">${escapeHtml(t(lang, 'setup_step_badge'))}</div>
+        <h1 class="hero-title">${escapeHtml(t(lang, 'setup_title'))}</h1>
+        <p class="hero-subtitle">${escapeHtml(t(lang, 'setup_subtitle'))}</p>
+      </header>
+      <form id="setup-form" style="padding:18px 16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <div class="field-group">
+          <label class="field-label" for="setup-warung-name">${escapeHtml(t(lang, 'setup_warung_name_label'))}</label>
+          <input id="setup-warung-name" name="name" class="field-input" type="text" required
+            placeholder="${escapeHtml(t(lang, 'setup_warung_name_placeholder'))}"
+            value="${escapeHtml(w.name)}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="setup-owner-name">${escapeHtml(t(lang, 'setup_owner_name_label'))}</label>
+          <input id="setup-owner-name" name="ownerName" class="field-input" type="text"
+            placeholder="${escapeHtml(t(lang, 'setup_owner_name_placeholder'))}"
+            value="${escapeHtml(w.ownerName)}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="setup-phone">${escapeHtml(t(lang, 'setup_phone_label'))}</label>
+          <input id="setup-phone" name="phone" class="field-input" type="tel"
+            placeholder="${escapeHtml(t(lang, 'setup_phone_placeholder'))}"
+            value="${escapeHtml(w.phone)}" />
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div class="field-group">
+            <label class="field-label" for="setup-currency">${escapeHtml(t(lang, 'setup_currency_label'))}</label>
+            <select id="setup-currency" name="currency" class="field-input">
+              <option value="IDR" selected>Rp (Rupiah)</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="setup-due-days">${escapeHtml(t(lang, 'setup_due_days_label'))}</label>
+            <select id="setup-due-days" name="dueDays" class="field-input">
+              ${[7, 14, 30]
+                .map(
+                  (d) =>
+                    `<option value="${d}" ${Number(w.dueDays) === d ? 'selected' : ''}>${d} ${escapeHtml(t(lang, 'setup_due_days_suffix'))}</option>`
+                )
+                .join('')}
+            </select>
+          </div>
+        </div>
+
+        <div style="background:var(--primary-light); border-radius:var(--radius-sm); padding:14px 16px; border:1px solid oklch(80% 0.1 175);">
+          <div style="font-size:11px; font-weight:700; color:var(--primary-dark); margin-bottom:6px; letter-spacing:0.4px;">
+            ${escapeHtml(t(lang, 'setup_preview_label'))}
+          </div>
+          <div id="setup-preview-text" style="font-size:13px; color:var(--text2); line-height:1.55;">
+            "Assalamualaikum Pak Budi, mengingatkan catatan belanja di <strong style="color:var(--primary-dark);">${previewName}</strong> sebesar <strong>Rp 350.000</strong>. Terima kasih 🙏"
+          </div>
+        </div>
+
+        <div style="margin-top:auto; padding-top:8px;">
+          <button type="submit" class="btn-primary" id="setup-save-btn">
+            <span>✓</span>
+            <span>${escapeHtml(t(lang, 'setup_save_cta'))}</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function renderCustomerListScreen(lang, ledger) {
+  const w = appState.warung;
+  const filtered = filterCustomers(ledger.customers, {
+    search: uiState.searchQuery,
+    riskFilter: uiState.riskFilter
+  });
+
+  const filterChips = [
+    { id: 'Semua', label: t(lang, 'filter_all') },
+    { id: 'Tinggi', label: t(lang, 'filter_high') },
+    { id: 'Sedang', label: t(lang, 'filter_medium') },
+    { id: 'Rendah', label: t(lang, 'filter_low') }
+  ];
+
+  const avatarStyles = {
+    Tinggi: 'background:var(--red-light); color:var(--red);',
+    Sedang: 'background:var(--amber-light); color:var(--amber);',
+    Rendah: 'background:var(--primary-light); color:var(--primary-dark);'
+  };
+
+  return `
+    <div class="screen-body" data-screen="list">
+      <div style="background:var(--primary); padding:16px 16px 14px; color:#fff;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:12px;">
+          <div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.75); font-weight:500;">${escapeHtml(w.name)}</div>
+            <h1 style="font-family:var(--font-display); font-size:21px; color:#fff; margin-top:2px;">
+              ${escapeHtml(t(lang, 'list_subtitle'))}
+            </h1>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button type="button" id="btn-open-add-customer"
+              style="background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.35); border-radius:10px; color:#fff; font-weight:700; font-size:13px; padding:8px 12px; min-height:44px;">
+              ${escapeHtml(t(lang, 'list_add_customer'))}
+            </button>
+          </div>
+        </div>
+
+        <div style="background:rgba(0,0,0,0.18); border-radius:12px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.75);">${escapeHtml(t(lang, 'list_total_piutang'))}</div>
+            <div id="total-piutang-value" style="font-family:var(--font-display); font-size:22px; color:#fff;">
+              ${escapeHtml(rp(ledger.totalPiutang, { spaced: true }))}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:11px; color:rgba(255,255,255,0.75);">${escapeHtml(t(lang, 'list_need_followup'))}</div>
+            <div style="font-size:17px; font-weight:700; color:#FCD34D;">
+              ${ledger.needFollowupCount} ${escapeHtml(t(lang, 'list_people_suffix'))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:12px 16px 8px; display:flex; flex-direction:column; gap:8px; background:var(--card); border-bottom:1px solid var(--border);">
+        <div style="display:flex; align-items:center; gap:8px; background:var(--bg); border-radius:10px; padding:0 12px; border:1.5px solid var(--border);">
+          <span aria-hidden="true" style="font-size:15px;">🔍</span>
+          <input id="customer-search-input" type="search"
+            placeholder="${escapeHtml(t(lang, 'list_search_placeholder'))}"
+            value="${escapeHtml(uiState.searchQuery)}"
+            style="border:none; background:none; outline:none; font-size:14px; color:var(--text); width:100%; min-height:44px;" />
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;" role="tablist">
+          ${filterChips
+            .map((chip) => {
+              const active = uiState.riskFilter === chip.id;
+              return `<button type="button" class="risk-filter-chip" data-risk="${chip.id}"
+                style="padding:6px 12px; border-radius:99px; font-size:12px; font-weight:600; min-height:44px; border:1.5px solid ${active ? 'var(--primary)' : 'var(--border)'}; background:${active ? 'var(--primary-light)' : 'transparent'}; color:${active ? 'var(--primary-dark)' : 'var(--text2)'};">
+                ${escapeHtml(chip.label)}
+              </button>`;
+            })
+            .join('')}
+        </div>
+      </div>
+
+      <div style="flex:1; padding:10px 16px 18px; display:flex; flex-direction:column; gap:8px;">
+        ${
+          filtered.length === 0
+            ? `<div style="text-align:center; padding:32px 16px; color:var(--text3);">
+                 <p style="font-size:14px; margin-bottom:12px;">${escapeHtml(t(lang, 'empty_customers'))}</p>
+                 ${
+                   appState.customers.length === 0
+                     ? `<button type="button" id="btn-seed-demo-empty" class="btn-secondary">${escapeHtml(t(lang, 'empty_customers_cta'))}</button>`
+                     : ''
+                 }
+               </div>`
+            : filtered
+                .map((c) => {
+                  const initials = avatarInitials(c.name);
+                  const avStyle = avatarStyles[c.risk] || avatarStyles.Rendah;
+                  const badgeClass = c.isPaid ? 'risk-Lunas' : `risk-${c.risk}`;
+                  const badgeLabel = c.isPaid ? t(lang, 'risk_paid') : c.risk;
+                  const amountColor =
+                    c.risk === 'Tinggi'
+                      ? 'var(--red)'
+                      : c.risk === 'Sedang'
+                        ? 'var(--amber)'
+                        : 'var(--text)';
+                  return `
+                    <button type="button" class="customer-row-card" data-customer-id="${escapeHtml(c.id)}"
+                      style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; display:flex; align-items:center; gap:12px; text-align:left; width:100%; min-height:68px;">
+                      <div style="width:42px; height:42px; border-radius:50%; ${avStyle} display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0;">
+                        ${escapeHtml(initials)}
+                      </div>
+                      <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                          <span style="font-weight:700; font-size:14px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            ${escapeHtml(c.name)}
+                          </span>
+                          <span class="risk-badge ${badgeClass}">
+                            <span class="risk-dot"></span>${escapeHtml(badgeLabel)}
+                          </span>
+                        </div>
+                        <div style="font-size:12px; color:var(--text3); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                          ${escapeHtml(c.note || c.phoneRaw)}
+                        </div>
+                      </div>
+                      <div style="text-align:right; flex-shrink:0;">
+                        <div style="font-weight:700; font-size:14px; color:${amountColor};">
+                          ${escapeHtml(rp(c.balance, { spaced: true }))}
+                        </div>
+                        <div style="font-size:11px; color:var(--text3); margin-top:2px;">
+                          ${c.isPaid ? escapeHtml(t(lang, 'risk_paid')) : `${c.daysOverdue} ${escapeHtml(t(lang, 'days_overdue_suffix'))}`}
+                        </div>
+                      </div>
+                      <span style="color:var(--text3); font-size:16px;" aria-hidden="true">›</span>
+                    </button>
+                  `;
+                })
+                .join('')
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderAddCustomerSheet(lang) {
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <form class="sheet-panel" id="form-add-customer">
+        <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
+          ${escapeHtml(t(lang, 'sheet_add_customer_title'))}
+        </h2>
+        <div class="field-group">
+          <label class="field-label" for="add-cust-name">${escapeHtml(t(lang, 'sheet_customer_name_label'))}</label>
+          <input id="add-cust-name" name="name" class="field-input" type="text" required
+            placeholder="${escapeHtml(t(lang, 'sheet_customer_name_placeholder'))}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="add-cust-phone">${escapeHtml(t(lang, 'sheet_customer_phone_label'))}</label>
+          <input id="add-cust-phone" name="phone" class="field-input" type="tel" required
+            placeholder="${escapeHtml(t(lang, 'sheet_customer_phone_placeholder'))}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="add-cust-note">${escapeHtml(t(lang, 'sheet_customer_note_label'))}</label>
+          <input id="add-cust-note" name="note" class="field-input" type="text"
+            placeholder="${escapeHtml(t(lang, 'sheet_customer_note_placeholder'))}" />
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div class="field-group">
+            <label class="field-label" for="add-cust-debt">${escapeHtml(t(lang, 'sheet_initial_debt_label'))}</label>
+            <input id="add-cust-debt" name="initialDebtIdr" class="field-input" type="number" min="0" step="1000"
+              placeholder="${escapeHtml(t(lang, 'sheet_initial_debt_placeholder'))}" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="add-cust-days">${escapeHtml(t(lang, 'sheet_initial_days_label'))}</label>
+            <input id="add-cust-days" name="daysAgo" class="field-input" type="number" min="0" max="365" value="0" />
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">
+            ${escapeHtml(t(lang, 'sheet_cancel_btn'))}
+          </button>
+          <button type="submit" class="btn-primary" style="flex:1;">
+            ${escapeHtml(t(lang, 'sheet_save_btn'))}
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function renderProGateSheet(lang) {
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <div class="sheet-panel">
+        <div style="font-size:28px;">⚡</div>
+        <h2 style="font-family:var(--font-display); font-size:21px; color:var(--text);">
+          ${escapeHtml(t(lang, 'pro_gate_title'))}
+        </h2>
+        <p style="font-size:14px; color:var(--text2); line-height:1.55;">
+          ${escapeHtml(t(lang, 'pro_gate_desc'))}
+        </p>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+          <button type="button" id="btn-unlock-pro" class="btn-primary">
+            ${escapeHtml(t(lang, 'pro_gate_unlock_btn'))}
+          </button>
+          <button type="button" id="btn-cancel-sheet" class="btn-secondary">
+            ${escapeHtml(t(lang, 'pro_gate_close_btn'))}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderBottomNav(lang) {
+  const items = [
+    { id: 'setup', icon: '🏪', label: t(lang, 'nav_warung') },
+    { id: 'list', icon: '👥', label: t(lang, 'nav_customers') },
+    { id: 'settings', icon: '⚙️', label: t(lang, 'nav_settings') }
+  ];
+  return `
+    <nav class="bottom-nav" aria-label="Menu Utama">
+      ${items
+        .map((item) => {
+          const active =
+            uiState.screen === item.id ||
+            (['detail', 'reminder', 'card'].includes(uiState.screen) && item.id === 'list');
+          return `
+            <button type="button" class="bottom-nav-btn ${active ? 'active' : ''}" data-nav="${item.id}">
+              <span class="bottom-nav-icon" aria-hidden="true">${item.icon}</span>
+              <span class="bottom-nav-label">${escapeHtml(item.label)}</span>
+              ${active ? '<span class="bottom-nav-dot"></span>' : ''}
+            </button>
+          `;
+        })
+        .join('')}
+    </nav>
+  `;
+}
+
+export function renderApp() {
+  const root = document.getElementById('app');
+  if (!root || !appState) return;
+  applyTheme();
+
+  const lang = appState.settings.lang;
+  const ledger = computeWarungLedger(appState);
+
+  let screenHtml = '';
+  if (uiState.screen === 'setup') {
+    screenHtml = renderSetupScreen(lang);
+  } else {
+    screenHtml = renderCustomerListScreen(lang, ledger);
+  }
+
+  let sheetHtml = '';
+  if (uiState.activeSheet === 'addCustomer') {
+    sheetHtml = renderAddCustomerSheet(lang);
+  } else if (uiState.activeSheet === 'proGate') {
+    sheetHtml = renderProGateSheet(lang);
+  }
+
+  root.innerHTML = `
+    ${screenHtml}
+    ${renderBottomNav(lang)}
+    ${sheetHtml}
+  `;
+
+  bindEvents();
+}
+
+function bindEvents() {
+  const root = document.getElementById('app');
+  if (!root) return;
+
+  // Bottom navigation
+  root.querySelectorAll('[data-nav]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      uiState.screen = btn.getAttribute('data-nav');
+      uiState.activeSheet = null;
+      renderApp();
+    });
+  });
+
+  // Setup form live preview & submit
+  const setupForm = root.querySelector('#setup-form');
+  if (setupForm) {
+    const nameInput = setupForm.querySelector('#setup-warung-name');
+    const previewEl = setupForm.querySelector('#setup-preview-text');
+    if (nameInput && previewEl) {
+      nameInput.addEventListener('input', () => {
+        const val = escapeHtml(nameInput.value.trim() || 'Warung Anda');
+        previewEl.innerHTML = `"Assalamualaikum Pak Budi, mengingatkan catatan belanja di <strong style="color:var(--primary-dark);">${val}</strong> sebesar <strong>Rp 350.000</strong>. Terima kasih 🙏"`;
+      });
+    }
+    setupForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(setupForm);
+      appState = updateWarung(appState, {
+        name: String(fd.get('name') || '').trim() || 'Warung Bu Siti',
+        ownerName: String(fd.get('ownerName') || '').trim(),
+        phone: String(fd.get('phone') || '').trim(),
+        dueDays: Number(fd.get('dueDays') || 14),
+        hasCompletedSetup: true
+      });
+      uiState.screen = 'list';
+      renderApp();
+    });
+  }
+
+  // Search input
+  const searchInput = root.querySelector('#customer-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      uiState.searchQuery = e.target.value;
+      const pos = e.target.selectionStart;
+      renderApp();
+      const nextInput = document.getElementById('customer-search-input');
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(pos, pos);
+      }
+    });
+  }
+
+  // Risk filter chips
+  root.querySelectorAll('.risk-filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      uiState.riskFilter = chip.getAttribute('data-risk') || 'Semua';
+      renderApp();
+    });
+  });
+
+  // Seed demo data button when empty
+  const seedBtn = root.querySelector('#btn-seed-demo-empty');
+  if (seedBtn) {
+    seedBtn.addEventListener('click', () => {
+      appState = seedDemoData(appState, globalThis.localStorage, { count: 6 });
+      renderApp();
+    });
+  }
+
+  // Open add customer sheet (check 25-customer free tier limit first)
+  const addCustBtn = root.querySelector('#btn-open-add-customer');
+  if (addCustBtn) {
+    addCustBtn.addEventListener('click', () => {
+      if (!canAddCustomer(appState)) {
+        uiState.activeSheet = 'proGate';
+      } else {
+        uiState.activeSheet = 'addCustomer';
+      }
+      renderApp();
+    });
+  }
+
+  // Cancel sheet
+  const cancelBtn = root.querySelector('#btn-cancel-sheet');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      uiState.activeSheet = null;
+      renderApp();
+    });
+  }
+
+  // Add customer submit
+  const addCustForm = root.querySelector('#form-add-customer');
+  if (addCustForm) {
+    addCustForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(addCustForm);
+      try {
+        appState = addCustomer(appState, {
+          name: fd.get('name'),
+          phone: fd.get('phone'),
+          note: fd.get('note'),
+          initialDebtIdr: fd.get('initialDebtIdr'),
+          daysAgo: fd.get('daysAgo')
+        });
+        uiState.activeSheet = null;
+        renderApp();
+      } catch (err) {
+        if (err && err.code === 'PRO_LIMIT_REACHED') {
+          uiState.activeSheet = 'proGate';
+          renderApp();
+        }
+      }
+    });
+  }
+
+  // Unlock Pro button
+  const unlockProBtn = root.querySelector('#btn-unlock-pro');
+  if (unlockProBtn) {
+    unlockProBtn.addEventListener('click', () => {
+      appState = updateSettings(appState, { isPro: true });
+      uiState.activeSheet = null;
+      renderApp();
+    });
+  }
+}
+
 export async function initApp() {
   await loadDictionaries();
-  const state = loadState();
-  saveState(state);
-  const root = document.getElementById('app');
-  if (root) {
-    const lang = state.settings.lang;
-    root.innerHTML = `<div class="hero-header"><h1 class="hero-title">${t(lang, 'app_name')}</h1><p class="hero-subtitle">${t(lang, 'app_tagline')}</p></div>`;
+  appState = loadState();
+  // Seed initial 6 customers on first run if empty so warung owner sees prototype right away
+  if (appState.customers.length === 0 && !appState.settings.hasCompletedSetup) {
+    appState = seedDemoData(appState, globalThis.localStorage, { count: 6 });
+    uiState.screen = 'setup';
+  } else {
+    uiState.screen = appState.settings.hasCompletedSetup ? 'list' : 'setup';
   }
+  saveState(appState);
+  renderApp();
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
