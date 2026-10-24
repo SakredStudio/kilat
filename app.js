@@ -1,4 +1,4 @@
-// Kilat — Main Application Controller (P0–P4)
+// Kilat — Main Application Controller (P0–P5)
 import { registerTranslations, t } from './lib/i18n.js';
 import { rp, avatarInitials, formatDateId } from './lib/format.js';
 import { formatLocalPhone as fmtPhone } from './lib/phone.js';
@@ -14,7 +14,10 @@ import {
   undoLastAction,
   getUndoMeta,
   clearUndo,
-  seedDemoData
+  seedDemoData,
+  exportBackupJson,
+  importBackupJson,
+  exportCsv
 } from './lib/store.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 import { buildReminderMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
@@ -60,6 +63,19 @@ function showUndoToast(message) {
     clearUndo();
     renderApp();
   }, 5000);
+}
+
+function triggerFileDownload(content, filename, mimeType = 'application/json') {
+  if (typeof document === 'undefined' || typeof URL === 'undefined') return;
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 async function loadDictionaries() {
@@ -580,7 +596,6 @@ function renderShareCardScreen(lang) {
       </div>
 
       <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
-        <!-- HTML preview + hidden/scaled 1080x1350 canvas -->
         <div style="background:linear-gradient(145deg, #092228 0%, #10353E 100%); border-radius:20px; padding:20px 18px; color:#fff; box-shadow:0 8px 28px rgba(0,0,0,0.22); position:relative; overflow:hidden;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:14px;">
             <div>
@@ -665,6 +680,93 @@ function renderShareCardScreen(lang) {
           <button type="button" id="btn-back-from-card-bottom" class="btn-secondary">
             ${escapeHtml(t(lang, 'card_back_btn'))}
           </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettingsScreen(lang) {
+  const s = appState.settings;
+  return `
+    <div class="screen-body" data-screen="settings">
+      <header class="hero-header">
+        <h1 class="hero-title">${escapeHtml(t(lang, 'settings_title'))}</h1>
+        <p class="hero-subtitle">${escapeHtml(t(lang, 'app_tagline'))}</p>
+      </header>
+
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <!-- Default Tone & Dark Mode -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:12px;">
+          <div class="field-group">
+            <label class="field-label" for="settings-default-tone">${escapeHtml(t(lang, 'settings_default_tone'))}</label>
+            <select id="settings-default-tone" class="field-input">
+              <option value="sopan" ${s.tone === 'sopan' ? 'selected' : ''}>${escapeHtml(t(lang, 'tone_sopan_label'))}</option>
+              <option value="singkat" ${s.tone === 'singkat' ? 'selected' : ''}>${escapeHtml(t(lang, 'tone_singkat_label'))}</option>
+              <option value="tegas" ${s.tone === 'tegas' ? 'selected' : ''}>${escapeHtml(t(lang, 'tone_tegas_label'))}</option>
+            </select>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:14px; font-weight:600; color:var(--text);">${escapeHtml(t(lang, 'settings_dark_mode'))}</span>
+            <button type="button" id="btn-toggle-dark" class="btn-secondary" style="width:auto; min-width:96px;">
+              ${s.darkMode ? '🌙 Aktif' : '☀️ Terang'}
+            </button>
+          </div>
+        </div>
+
+        <!-- Kilat Pro Status -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:10px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_pro_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text);">
+            ${escapeHtml(s.isPro ? t(lang, 'settings_pro_status_active') : t(lang, 'settings_pro_status_free'))}
+          </div>
+          <button type="button" id="btn-toggle-pro-mode" class="btn-secondary">
+            ${escapeHtml(t(lang, 'settings_pro_toggle'))}: <strong>${s.isPro ? 'ON' : 'OFF'}</strong>
+          </button>
+        </div>
+
+        <!-- Demo Data Loader -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_demo_title'))}
+          </div>
+          <button type="button" id="btn-load-demo-6" class="btn-secondary">
+            ${escapeHtml(t(lang, 'settings_demo_load_6'))}
+          </button>
+          <button type="button" id="btn-load-demo-12" class="btn-secondary">
+            ${escapeHtml(t(lang, 'settings_demo_load_12'))}
+          </button>
+        </div>
+
+        <!-- Backup JSON & CSV Export -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_backup_title'))}
+          </div>
+          <button type="button" id="btn-export-json" class="btn-secondary">
+            ⬇️ ${escapeHtml(t(lang, 'settings_export_json'))}
+          </button>
+          <label for="input-import-json" class="btn-secondary tap-target" style="cursor:pointer;">
+            ⬆️ ${escapeHtml(t(lang, 'settings_import_json'))}
+          </label>
+          <input id="input-import-json" type="file" accept="application/json,.json" style="display:none;" />
+
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase; margin-top:6px;">
+            ${escapeHtml(t(lang, 'settings_csv_title'))}
+          </div>
+          <button type="button" id="btn-export-csv" class="btn-secondary">
+            📊 ${escapeHtml(t(lang, 'settings_export_csv'))}
+          </button>
+        </div>
+
+        <!-- Privacy Footer -->
+        <div style="padding:12px; text-align:center; font-size:12px; color:var(--text3); line-height:1.5;">
+          <p>${escapeHtml(t(lang, 'privacy_notice'))}</p>
+          <a href="./privacy.html" class="tap-target" style="display:inline-flex; align-items:center; justify-content:center; color:var(--primary-dark); font-weight:600; margin-top:4px; text-decoration:underline;">
+            Kebijakan Privasi
+          </a>
         </div>
       </div>
     </div>
@@ -891,6 +993,8 @@ export function renderApp() {
     screenHtml = renderReminderScreen(lang, selectedCustomer);
   } else if (uiState.screen === 'card') {
     screenHtml = renderShareCardScreen(lang);
+  } else if (uiState.screen === 'settings') {
+    screenHtml = renderSettingsScreen(lang);
   } else {
     screenHtml = renderCustomerListScreen(lang, ledger);
   }
@@ -913,7 +1017,6 @@ export function renderApp() {
     ${sheetHtml}
   `;
 
-  // Pre-render the 1080x1350 canvas if on the Share Card screen
   if (uiState.screen === 'card') {
     const canvas = root.querySelector('#share-card-canvas');
     if (canvas) {
@@ -1120,6 +1223,88 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
+  // Settings screen events
+  const defaultToneSelect = root.querySelector('#settings-default-tone');
+  if (defaultToneSelect) {
+    defaultToneSelect.addEventListener('change', (e) => {
+      appState = updateSettings(appState, { tone: e.target.value });
+      renderApp();
+    });
+  }
+
+  const toggleDarkBtn = root.querySelector('#btn-toggle-dark');
+  if (toggleDarkBtn) {
+    toggleDarkBtn.addEventListener('click', () => {
+      appState = updateSettings(appState, { darkMode: !appState.settings.darkMode });
+      renderApp();
+    });
+  }
+
+  const toggleProBtn = root.querySelector('#btn-toggle-pro-mode');
+  if (toggleProBtn) {
+    toggleProBtn.addEventListener('click', () => {
+      appState = updateSettings(appState, { isPro: !appState.settings.isPro });
+      renderApp();
+    });
+  }
+
+  const loadDemo6Btn = root.querySelector('#btn-load-demo-6');
+  if (loadDemo6Btn) {
+    loadDemo6Btn.addEventListener('click', () => {
+      appState = seedDemoData(appState, globalThis.localStorage, { count: 6 });
+      uiState.screen = 'list';
+      renderApp();
+    });
+  }
+
+  const loadDemo12Btn = root.querySelector('#btn-load-demo-12');
+  if (loadDemo12Btn) {
+    loadDemo12Btn.addEventListener('click', () => {
+      appState = seedDemoData(appState, globalThis.localStorage, { count: 12 });
+      uiState.screen = 'list';
+      renderApp();
+    });
+  }
+
+  const exportJsonBtn = root.querySelector('#btn-export-json');
+  if (exportJsonBtn) {
+    exportJsonBtn.addEventListener('click', () => {
+      const json = exportBackupJson(appState);
+      triggerFileDownload(json, 'kilat-cadangan.json', 'application/json');
+    });
+  }
+
+  const importJsonInput = root.querySelector('#input-import-json');
+  if (importJsonInput) {
+    importJsonInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        appState = importBackupJson(text);
+        uiState.screen = 'list';
+        renderApp();
+      } catch (err) {
+        console.error('Import JSON failed:', err);
+      }
+    });
+  }
+
+  const exportCsvBtn = root.querySelector('#btn-export-csv');
+  if (exportCsvBtn) {
+    exportCsvBtn.addEventListener('click', () => {
+      try {
+        const csv = exportCsv(appState);
+        triggerFileDownload(csv, 'kilat-laporan-piutang.csv', 'text/csv;charset=utf-8');
+      } catch (err) {
+        if (err && err.code === 'PRO_REQUIRED') {
+          uiState.activeSheet = 'proGate';
+          renderApp();
+        }
+      }
+    });
+  }
+
   // Quick amount chips in Add Debt sheet
   root.querySelectorAll('.quick-amt-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1269,6 +1454,10 @@ export async function initApp() {
   }
   saveState(appState);
   renderApp();
+
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
