@@ -161,5 +161,19 @@
   "undo_toast_merge": "Pelanggan digabungkan",
   "dup_phone_warning": "Nomor ini sudah terdaftar atas nama {nama}. Buka pelanggan itu, atau tetap simpan sebagai pelanggan baru?",
   "dup_phone_open_btn": "Buka yang ada",
-  "dup_phone_save_anyway_btn": "Tetap simpan"
+  "dup_phone_save_anyway_btn": "Tetap simpan",
+  "list_broadcast_btn": "Kirim ke semua yang nunggak ({count})",
+  "broadcast_title": "Pengingat Beruntun",
+  "broadcast_progress": "Pelanggan {n} dari {m}",
+  "broadcast_send_btn": "Kirim WhatsApp",
+  "broadcast_sent_btn": "Terkirim · Kirim ulang?",
+  "broadcast_next_btn": "Berikutnya",
+  "broadcast_skip_btn": "Lewati, berikutnya",
+  "broadcast_done_title": "Selesai!",
+  "broadcast_done_summary": "{sent} pengingat dibuka di WhatsApp, {skipped} dilewati.",
+  "broadcast_back_btn": "Kembali ke daftar",
+  "broadcast_empty": "Tidak ada pelanggan yang menunggak saat ini. Mantap!",
+  "broadcast_last_reminded": "Terakhir diingatkan {waktu}",
+  "detail_last_reminded": "Terakhir diingatkan: {waktu}",
+  "detail_never_reminded": "Belum pernah diingatkan"
 }

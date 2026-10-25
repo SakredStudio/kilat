@@ -23,9 +23,11 @@ import {
   exportBackupJson,
   importBackupJson,
   exportCsv,
-  addDaysIsoDate
+  addDaysIsoDate,
+  logReminder
 } from './lib/store.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
+import { buildBroadcastQueue, queueProgress, latestReminderByCustomer } from './lib/broadcast.js';
 import { buildReminderMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
 import {
   buildShareCardModel,
@@ -54,8 +56,18 @@ let uiState = {
   billingAvailable: false,
   billingBusy: false,
   billingNotice: '',
-  proPrice: PRO_PRICE_FALLBACK
+  proPrice: PRO_PRICE_FALLBACK,
+  broadcast: { index: 0, sentIds: [], tone: 'sopan' }
 };
+
+function formatDateTimeShort(iso) {
+  const s = String(iso || '');
+  if (!s) return '';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return formatDateId(s);
+  const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
+  return `${formatDateId(localIsoDate(d))} ${hh}:${mm}`;
+}
 
 function riskLabel(lang, risk) {
   const key = risk === 'Tinggi' ? 'risk_high' : risk === 'Sedang' ? 'risk_medium' : 'risk_low';
@@ -193,6 +205,8 @@ function renderCustomerListScreen(lang, ledger) {
     riskFilter: uiState.riskFilter
   });
 
+  const broadcastCount = buildBroadcastQueue(ledger.customers, appState.reminders).length;
+
   const filterChips = [
     { id: 'Semua', label: t(lang, 'filter_all') },
     { id: 'Tinggi', label: t(lang, 'filter_high') },
@@ -256,6 +270,15 @@ function renderCustomerListScreen(lang, ledger) {
         </div>
       </div>
 
+      ${
+        broadcastCount > 0 && !uiState.searchQuery && uiState.riskFilter === 'Semua'
+          ? `<div style="padding:12px 16px 0;">
+               <button type="button" id="btn-open-broadcast" class="btn-primary btn-wa" style="font-size:14px;">
+                 📣 ${escapeHtml(t(lang, 'list_broadcast_btn', { count: broadcastCount }))}
+               </button>
+             </div>`
+          : ''
+      }
       ${renderDueTodaySection(lang, ledger)}
 
       <div style="flex:1; padding:10px 16px 18px; display:flex; flex-direction:column; gap:8px;">
@@ -356,6 +379,7 @@ function renderCustomerDetailScreen(lang, customer) {
       : customer.risk === 'Sedang'
         ? 'var(--amber)'
         : 'var(--primary-dark)';
+  const lastReminded = latestReminderByCustomer(appState.reminders)[customer.id] || null;
 
   return `
     <div class="screen-body" data-screen="detail">
@@ -429,6 +453,13 @@ function renderCustomerDetailScreen(lang, customer) {
             <button type="button" id="btn-go-reminder" class="btn-primary btn-wa">
               ${escapeHtml(t(lang, 'customer_send_wa_btn'))}
             </button>
+          </div>
+          <div style="font-size:12px; color:var(--text3); margin-top:8px; text-align:center;">
+            ${escapeHtml(
+              lastReminded
+                ? t(lang, 'detail_last_reminded', { waktu: formatDateTimeShort(lastReminded.sentAt) })
+                : t(lang, 'detail_never_reminded')
+            )}
           </div>
         </div>
 
@@ -552,12 +583,6 @@ function renderReminderScreen(lang, customer) {
   const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, currentMsg);
   const firstName = customer.name.split(' ')[0] || customer.name;
 
-  const tones = [
-    { id: 'sopan', label: t(lang, 'tone_sopan_label'), desc: t(lang, 'tone_sopan_desc') },
-    { id: 'singkat', label: t(lang, 'tone_singkat_label'), desc: t(lang, 'tone_singkat_desc') },
-    { id: 'tegas', label: t(lang, 'tone_tegas_label'), desc: t(lang, 'tone_tegas_desc') }
-  ];
-
   const pillBg =
     customer.risk === 'Tinggi'
       ? 'var(--red-light)'
@@ -613,50 +638,10 @@ function renderReminderScreen(lang, customer) {
           <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px;">
             ${escapeHtml(t(lang, 'reminder_tone_label'))}
           </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
-            ${tones
-              .map((tn) => {
-                const active = activeTone === tn.id;
-                return `
-                  <button type="button" class="tone-picker-btn" data-tone="${tn.id}"
-                    style="padding:10px 6px; border-radius:var(--radius-sm); border:2px solid ${active ? 'var(--primary)' : 'var(--border)'}; background:${active ? 'var(--primary-light)' : 'var(--card)'}; display:flex; flex-direction:column; align-items:center; gap:3px; min-height:56px;">
-                    <span style="font-size:13px; font-weight:700; color:${active ? 'var(--primary-dark)' : 'var(--text)'};">
-                      ${escapeHtml(tn.label)}
-                    </span>
-                    <span style="font-size:11px; color:var(--text3);">
-                      ${escapeHtml(tn.desc)}
-                    </span>
-                  </button>
-                `;
-              })
-              .join('')}
-          </div>
+          ${renderTonePicker(lang, activeTone)}
         </div>
 
-        <div style="background:#E5DDD5; border-radius:var(--radius-sm); overflow:hidden; border:1px solid var(--border);">
-          <div style="background:#075E54; padding:10px 14px; display:flex; align-items:center; gap:10px;">
-            <div style="width:32px; height:32px; border-radius:50%; background:#25D366; display:flex; align-items:center; justify-content:center; font-size:15px;">
-              💬
-            </div>
-            <div>
-              <div style="font-size:13px; font-weight:700; color:#fff;">
-                ${escapeHtml(t(lang, 'reminder_wa_preview_header'))}
-              </div>
-              <div style="font-size:11px; color:rgba(255,255,255,0.78);">
-                ${escapeHtml(fmtPhone(customer.phone62 || customer.phoneRaw))}
-              </div>
-            </div>
-          </div>
-
-          <div style="padding:12px;">
-            <div style="background:#DCF8C6; border-radius:8px 8px 2px 8px; padding:10px 12px; box-shadow:0 1px 2px rgba(0,0,0,0.12);">
-              <div id="wa-bubble-preview-text" style="font-size:13px; color:#111; line-height:1.6; white-space:pre-wrap; word-break:break-word;">${formatWaBoldHtml(currentMsg)}</div>
-              <div style="text-align:right; margin-top:4px; font-size:10px; color:#667781;">
-                09:41 ✓✓
-              </div>
-            </div>
-          </div>
-        </div>
+        ${renderWaBubble(lang, fmtPhone(customer.phone62 || customer.phoneRaw), currentMsg)}
 
         <div class="field-group">
           <label class="field-label" for="reminder-custom-textarea">
@@ -679,6 +664,130 @@ function renderReminderScreen(lang, customer) {
       </div>
     </div>
   `;
+}
+
+function toneOptions(lang) {
+  return [
+    { id: 'sopan', label: t(lang, 'tone_sopan_label'), desc: t(lang, 'tone_sopan_desc') },
+    { id: 'singkat', label: t(lang, 'tone_singkat_label'), desc: t(lang, 'tone_singkat_desc') },
+    { id: 'tegas', label: t(lang, 'tone_tegas_label'), desc: t(lang, 'tone_tegas_desc') }
+  ];
+}
+
+function renderTonePicker(lang, activeTone, options = toneOptions(lang)) {
+  const cols = options.length;
+  return `
+    <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:8px;">
+      ${options
+        .map((tn) => {
+          const active = activeTone === tn.id;
+          return `
+            <button type="button" class="tone-picker-btn" data-tone="${tn.id}"
+              style="padding:10px 6px; border-radius:var(--radius-sm); border:2px solid ${active ? 'var(--primary)' : 'var(--border)'}; background:${active ? 'var(--primary-light)' : 'var(--card)'}; display:flex; flex-direction:column; align-items:center; gap:3px; min-height:56px;">
+              <span style="font-size:13px; font-weight:700; color:${active ? 'var(--primary-dark)' : 'var(--text)'};">${escapeHtml(tn.label)}</span>
+              <span style="font-size:11px; color:var(--text3);">${escapeHtml(tn.desc)}</span>
+            </button>`;
+        })
+        .join('')}
+    </div>`;
+}
+
+function renderWaBubble(lang, phoneLabel, message) {
+  return `
+    <div style="background:#E5DDD5; border-radius:var(--radius-sm); overflow:hidden; border:1px solid var(--border);">
+      <div style="background:#075E54; padding:10px 14px; display:flex; align-items:center; gap:10px;">
+        <div style="width:32px; height:32px; border-radius:50%; background:#25D366; display:flex; align-items:center; justify-content:center; font-size:15px;">💬</div>
+        <div>
+          <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(t(lang, 'reminder_wa_preview_header'))}</div>
+          <div style="font-size:11px; color:rgba(255,255,255,0.78);">${escapeHtml(phoneLabel)}</div>
+        </div>
+      </div>
+      <div style="padding:12px;">
+        <div style="background:#DCF8C6; border-radius:8px 8px 2px 8px; padding:10px 12px; box-shadow:0 1px 2px rgba(0,0,0,0.12);">
+          <div id="wa-bubble-preview-text" style="font-size:13px; color:#111; line-height:1.6; white-space:pre-wrap; word-break:break-word;">${formatWaBoldHtml(message)}</div>
+          <div style="text-align:right; margin-top:4px; font-size:10px; color:#667781;">09:41 ✓✓</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderBroadcastScreen(lang, ledger) {
+  const w = appState.warung;
+  const queue = buildBroadcastQueue(ledger.customers, appState.reminders);
+  const b = uiState.broadcast;
+  const sent = new Set(b.sentIds);
+  const progress = queueProgress(queue, b.index, sent);
+  const current = queue[b.index] || null;
+
+  let body = '';
+  if (queue.length === 0) {
+    body = `<div style="text-align:center; padding:40px 16px; color:var(--text3); font-size:14px;">${escapeHtml(t(lang, 'broadcast_empty'))}</div>`;
+  } else if (progress.done || !current) {
+    body = `
+      <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:24px 16px; text-align:center; display:flex; flex-direction:column; gap:10px;">
+        <div style="font-size:36px;">✅</div>
+        <div style="font-family:var(--font-display); font-size:20px; color:var(--text);">${escapeHtml(t(lang, 'broadcast_done_title'))}</div>
+        <div style="font-size:14px; color:var(--text2);">${escapeHtml(t(lang, 'broadcast_done_summary', { sent: progress.sentCount, skipped: progress.skippedCount }))}</div>
+        <button type="button" id="btn-broadcast-finish" class="btn-primary" style="margin-top:8px;">${escapeHtml(t(lang, 'broadcast_back_btn'))}</button>
+      </div>`;
+  } else {
+    const msg = buildReminderMessage({
+      tone: b.tone,
+      nama: current.name,
+      jumlah: current.balance,
+      hari: current.daysOverdue,
+      warung: w.name,
+      tanggal: current.nextDueDate || ''
+    });
+    const waHref = buildWaLink(current.phone62 || current.phoneRaw, msg);
+    const isSent = sent.has(current.id);
+    body = `
+      <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div style="min-width:0;">
+          <div style="font-weight:700; font-size:16px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(current.name)}</div>
+          <div style="font-size:12px; color:var(--text3); margin-top:2px;">
+            ${escapeHtml(t(lang, 'reminder_overdue_days', { hari: current.daysOverdue }))} ·
+            ${escapeHtml(current.lastRemindedAt ? t(lang, 'broadcast_last_reminded', { waktu: formatDateTimeShort(current.lastRemindedAt) }) : t(lang, 'detail_never_reminded'))}
+          </div>
+        </div>
+        <div style="text-align:right; flex-shrink:0;">
+          <div style="font-family:var(--font-display); font-size:20px; color:${current.risk === 'Tinggi' ? 'var(--red)' : 'var(--amber)'};">${escapeHtml(rp(current.balance, { spaced: true }))}</div>
+          <span class="risk-badge risk-${current.risk}"><span class="risk-dot"></span>${escapeHtml(riskLabel(lang, current.risk))}</span>
+        </div>
+      </div>
+      ${renderTonePicker(lang, b.tone)}
+      ${renderWaBubble(lang, fmtPhone(current.phone62 || current.phoneRaw), msg)}
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
+        <a id="btn-broadcast-send" href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer" data-customer-id="${escapeHtml(current.id)}"
+          class="btn-primary btn-wa tap-target" style="${isSent ? 'opacity:0.85;' : ''}">
+          <span>${isSent ? '✓' : '💬'}</span>
+          <span>${escapeHtml(isSent ? t(lang, 'broadcast_sent_btn') : t(lang, 'broadcast_send_btn'))}</span>
+        </a>
+        <button type="button" id="btn-broadcast-next" class="btn-secondary">
+          ${escapeHtml(isSent ? t(lang, 'broadcast_next_btn') : t(lang, 'broadcast_skip_btn'))} →
+        </button>
+      </div>`;
+  }
+
+  return `
+    <div class="screen-body" data-screen="broadcast">
+      <div class="topbar">
+        <button type="button" class="back-btn" id="btn-back-to-list" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:15px; color:var(--text);">${escapeHtml(t(lang, 'broadcast_title'))}</div>
+          <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'broadcast_progress', { n: progress.position, m: progress.total }))}</div>
+        </div>
+        <div style="font-size:13px; font-weight:700; color:var(--primary-dark); background:var(--primary-light); padding:6px 10px; border-radius:99px;">
+          ${progress.position}/${progress.total}
+        </div>
+      </div>
+      <div style="height:4px; background:var(--bg2);">
+        <div style="height:4px; width:${progress.total ? Math.round((Math.min(b.index, progress.total) / progress.total) * 100) : 0}%; background:var(--primary); transition:width 0.2s;"></div>
+      </div>
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        ${body}
+      </div>
+    </div>`;
 }
 
 function renderShareCardScreen(lang) {
@@ -1100,7 +1209,7 @@ function renderBottomNav(lang) {
         .map((item) => {
           const active =
             uiState.screen === item.id ||
-            (['detail', 'reminder', 'card'].includes(uiState.screen) && item.id === 'list');
+            (['detail', 'reminder', 'card', 'broadcast'].includes(uiState.screen) && item.id === 'list');
           return `
             <button type="button" class="bottom-nav-btn ${active ? 'active' : ''}" data-nav="${item.id}">
               <span class="bottom-nav-icon" aria-hidden="true">${item.icon}</span>
@@ -1132,6 +1241,8 @@ export function renderApp() {
     screenHtml = renderReminderScreen(lang, selectedCustomer);
   } else if (uiState.screen === 'card') {
     screenHtml = renderShareCardScreen(lang);
+  } else if (uiState.screen === 'broadcast') {
+    screenHtml = renderBroadcastScreen(lang, ledger);
   } else if (uiState.screen === 'settings') {
     screenHtml = renderSettingsScreen(lang);
   } else {
@@ -1265,6 +1376,55 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
+  // Broadcast reminders (Chanda "next pending" loop): send opens wa.me + logs, next advances
+  const openBroadcastBtn = root.querySelector('#btn-open-broadcast');
+  if (openBroadcastBtn) {
+    openBroadcastBtn.addEventListener('click', () => {
+      uiState.broadcast = { index: 0, sentIds: [], tone: appState.settings.tone || 'sopan' };
+      uiState.screen = 'broadcast';
+      renderApp();
+    });
+  }
+
+  const broadcastSendEl = root.querySelector('#btn-broadcast-send');
+  if (broadcastSendEl) {
+    broadcastSendEl.addEventListener('click', () => {
+      const customerId = broadcastSendEl.getAttribute('data-customer-id');
+      if (customerId && !uiState.broadcast.sentIds.includes(customerId)) {
+        uiState.broadcast.sentIds.push(customerId);
+        try {
+          appState = logReminder(appState, { customerId, tone: uiState.broadcast.tone });
+        } catch { /* customer vanished mid-queue */ }
+      }
+      setTimeout(() => renderApp(), 200);
+    });
+  }
+
+  const broadcastNextBtn = root.querySelector('#btn-broadcast-next');
+  if (broadcastNextBtn) {
+    broadcastNextBtn.addEventListener('click', () => {
+      uiState.broadcast.index += 1;
+      renderApp();
+    });
+  }
+
+  const broadcastFinishBtn = root.querySelector('#btn-broadcast-finish');
+  if (broadcastFinishBtn) {
+    broadcastFinishBtn.addEventListener('click', () => {
+      uiState.screen = 'list';
+      renderApp();
+    });
+  }
+
+  if (uiState.screen === 'broadcast') {
+    root.querySelectorAll('.tone-picker-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        uiState.broadcast.tone = btn.getAttribute('data-tone') || 'sopan';
+        renderApp();
+      });
+    });
+  }
+
   // Per-customer delete: confirm, then 5-second undo via the store snapshot
   const deleteCustomerBtn = root.querySelector('#btn-delete-customer');
   if (deleteCustomerBtn && selectedCustomer) {
@@ -1323,14 +1483,16 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
-  root.querySelectorAll('.tone-picker-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      uiState.reminderTone = btn.getAttribute('data-tone') || 'sopan';
-      uiState.messageEdited = false;
-      uiState.sentFeedback = false;
-      renderApp();
+  if (uiState.screen === 'reminder') {
+    root.querySelectorAll('.tone-picker-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        uiState.reminderTone = btn.getAttribute('data-tone') || 'sopan';
+        uiState.messageEdited = false;
+        uiState.sentFeedback = false;
+        renderApp();
+      });
     });
-  });
+  }
 
   const reminderTextarea = root.querySelector('#reminder-custom-textarea');
   if (reminderTextarea && selectedCustomer) {
@@ -1350,8 +1512,13 @@ function bindEvents(selectedCustomer, lang) {
   }
 
   const sendWaLinkEl = root.querySelector('#btn-send-wa-link');
-  if (sendWaLinkEl) {
+  if (sendWaLinkEl && selectedCustomer) {
     sendWaLinkEl.addEventListener('click', () => {
+      if (!uiState.sentFeedback) {
+        try {
+          appState = logReminder(appState, { customerId: selectedCustomer.id, tone: uiState.reminderTone || 'sopan' });
+        } catch { /* ignore */ }
+      }
       uiState.sentFeedback = true;
       setTimeout(() => renderApp(), 200);
     });

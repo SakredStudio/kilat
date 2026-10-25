@@ -161,5 +161,19 @@
   "undo_toast_merge": "Customers merged",
   "dup_phone_warning": "This number is already registered to {nama}. Open that customer, or save as a new one anyway?",
   "dup_phone_open_btn": "Open existing",
-  "dup_phone_save_anyway_btn": "Save anyway"
+  "dup_phone_save_anyway_btn": "Save anyway",
+  "list_broadcast_btn": "Send to everyone overdue ({count})",
+  "broadcast_title": "Broadcast Reminders",
+  "broadcast_progress": "Customer {n} of {m}",
+  "broadcast_send_btn": "Send WhatsApp",
+  "broadcast_sent_btn": "Sent · Send again?",
+  "broadcast_next_btn": "Next",
+  "broadcast_skip_btn": "Skip, next",
+  "broadcast_done_title": "All done!",
+  "broadcast_done_summary": "{sent} reminders opened in WhatsApp, {skipped} skipped.",
+  "broadcast_back_btn": "Back to list",
+  "broadcast_empty": "Nobody is overdue right now. Nice!",
+  "broadcast_last_reminded": "Last reminded {waktu}",
+  "detail_last_reminded": "Last reminded: {waktu}",
+  "detail_never_reminded": "Never reminded yet"
 }
