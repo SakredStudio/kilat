@@ -29,7 +29,7 @@ Setiap modul murni di `lib/` punya berkas uji di `tests/`. `tests/acceptance.tes
 1. **Atur Toko (`setup`)** — nama warung, pemilik, nomor WhatsApp, jatuh tempo default (7/14/30 hari).
 2. **Daftar Pelanggan (`list`)** — total piutang, jumlah perlu ditagih, pencarian, chip risiko, batas 25 pelanggan di versi gratis.
 3. **Rincian Pelanggan (`detail`)** — sisa utang, riwayat, `+ Tambah Utang`, `✓ Catat Bayar` (FIFO ke utang tertua), *undo* 5 detik.
-4. **Kirim Pengingat (`reminder`)** — 3 nada, pratinjau gelembung WhatsApp, teks dapat diedit, tautan `wa.me`, baris `— Kilat · https://sakredstudio.github.io/kilat` selalu ditambahkan (`lib/wa.js` yang menjaminnya).
+4. **Kirim Pengingat (`reminder`)** — 3 nada, pratinjau gelembung WhatsApp, teks dapat diedit, tautan `wa.me`, baris `— Kilat · https://kilat.sakredstudio.ca` selalu ditambahkan (`lib/wa.js` yang menjaminnya).
 5. **Kartu Ringkasan (`card`)** — PNG `1080×1350`, Web Share API / unduh, watermark di versi gratis.
 6. **Pengaturan (`settings`)** — nada default, bahasa (ID/EN), mode gelap, data contoh (opt-in, tidak pernah otomatis), ekspor/impor JSON, CSV (Pro), hapus semua, privasi.
 
@@ -84,7 +84,7 @@ Foto bon (`<debtId>`) dan QRIS (`qris:<bookId>`) ada di IndexedDB `kilat-photos`
 
 ## Deploy (GitHub Pages)
 
-Live at https://sakredstudio.github.io/kilat/. The public repo `SakredStudio/kilat` is a deploy mirror of this folder; the monorepo is the source of truth. From the sakred-os root, on master:
+Live at https://kilat.sakredstudio.ca/. The public repo `SakredStudio/kilat` is a deploy mirror of this folder; the monorepo is the source of truth. From the sakred-os root, on master:
 
 ```
 git subtree push --prefix=projects/kilat/app https://github.com/SakredStudio/kilat.git main
