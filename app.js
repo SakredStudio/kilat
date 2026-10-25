@@ -34,8 +34,22 @@ import {
   canAddBook,
   addBook,
   switchBook,
-  deleteBook
+  deleteBook,
+  onStateSaved
 } from './lib/store.js';
+import {
+  isCloudConfigured,
+  newVaultId,
+  normalizeVaultId,
+  isValidVaultId,
+  validatePassphrase,
+  encryptBackup,
+  decryptBackup,
+  uploadVault,
+  downloadVault,
+  deleteVault,
+  createDebouncer
+} from './lib/cloud.js';
 import { bookLimit } from './lib/books.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 import { buildBroadcastQueue, queueProgress, latestReminderByCustomer } from './lib/broadcast.js';
@@ -81,6 +95,58 @@ let uiState = {
   book: 'customer', // 'customer' (piutang) | 'supplier' (hutang)
   attachQris: false // reminder screen: "+ lampirkan QRIS" toggle
 };
+
+// ---- Pro+ encrypted cloud backup (client side; passphrase lives only in memory for this session)
+let cloudPassphrase = null;
+
+function cloudErrorText(lang, err) {
+  const code = err && err.code;
+  if (code === 'WRONG_PASSPHRASE') return t(lang, 'cloud_err_wrong_pass');
+  if (code === 'NOT_FOUND') return t(lang, 'cloud_err_not_found');
+  if (code === 'TOO_LARGE') return t(lang, 'cloud_err_too_large');
+  if (code === 'NOT_CONFIGURED') return t(lang, 'settings_cloud_unavailable');
+  return t(lang, 'cloud_err_network');
+}
+
+function askPassphrase(lang) {
+  if (cloudPassphrase) return cloudPassphrase;
+  const p = window.prompt(t(lang, 'cloud_prompt_passphrase')) || '';
+  if (!validatePassphrase(p).ok) return null;
+  cloudPassphrase = p;
+  return p;
+}
+
+/** Encrypt the full backup (all books, no photos) and PUT it to the vault. */
+async function runCloudBackup(lang, { silent = false } = {}) {
+  const cloud = appState.settings.cloud;
+  if (!isCloudConfigured() || !appState.settings.isPro || !cloud.vaultId) return false;
+  const passphrase = silent ? cloudPassphrase : askPassphrase(lang);
+  if (!passphrase) return false;
+  uiState.cloudBusy = true;
+  uiState.cloudError = '';
+  if (!silent) renderApp();
+  try {
+    const payload = await encryptBackup(exportBackupJson(appState), passphrase);
+    await uploadVault(cloud.vaultId, payload);
+    appState = updateSettings(appState, { cloud: { ...cloud, lastBackupAt: payload.updatedAt } });
+    uiState.cloudNotice = t(lang, 'cloud_backup_done');
+    return true;
+  } catch (err) {
+    console.error('Cloud backup failed:', err);
+    uiState.cloudError = cloudErrorText(lang, err);
+    return false;
+  } finally {
+    uiState.cloudBusy = false;
+    if (!silent || uiState.screen === 'settings') renderApp();
+  }
+}
+
+// Auto-backup: any saved change schedules one upload 30 s later (only when the toggle is on and
+// the passphrase was entered this session). Deliberately never prompts on its own.
+const scheduleAutoBackup = createDebouncer(() => {
+  if (!appState || !appState.settings.cloud.autoBackup || !cloudPassphrase) return;
+  runCloudBackup(appState.settings.lang, { silent: true });
+}, 30_000);
 
 /** The active warung's QRIS image (dataURL) or null. Lives in IndexedDB, mirrored in uiState.photos. */
 function qrisDataUrl() {
@@ -1330,6 +1396,45 @@ function renderSettingsScreen(lang) {
           }
         </div>
 
+        <!-- Pro+: encrypted cloud backup (opt-in, off by default) -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:10px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_cloud_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_cloud_desc'))}</div>
+          ${
+            !isCloudConfigured()
+              ? `<div style="font-size:13px; font-weight:600; color:var(--text2); background:var(--bg2); border-radius:var(--radius-sm); padding:10px 12px;">${escapeHtml(t(lang, 'settings_cloud_unavailable'))}</div>`
+              : !s.isPro
+                ? `<button type="button" id="btn-cloud-pro-gate" class="btn-secondary">⚡ ${escapeHtml(t(lang, 'settings_cloud_pro_hint'))}</button>`
+                : s.cloud.vaultId
+                  ? `
+                    <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'settings_cloud_vault_code'))}</div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                      <code id="cloud-vault-code-display" style="flex:1; font-size:13px; word-break:break-all; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 10px;">${escapeHtml(s.cloud.vaultId)}</code>
+                      <button type="button" id="btn-cloud-copy" class="btn-secondary" style="width:auto; white-space:nowrap;">${escapeHtml(uiState.cloudCopied ? t(lang, 'settings_cloud_copied') : t(lang, 'settings_cloud_copy_btn'))}</button>
+                    </div>
+                    <div style="font-size:12px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_cloud_vault_hint'))}</div>
+                    <div style="font-size:13px; color:var(--text);">${escapeHtml(s.cloud.lastBackupAt ? t(lang, 'settings_cloud_last_backup', { waktu: formatDateTimeShort(s.cloud.lastBackupAt) }) : t(lang, 'settings_cloud_never'))}</div>
+                    ${uiState.cloudNotice ? `<div style="font-size:13px; font-weight:600; color:var(--primary-dark);">${escapeHtml(uiState.cloudNotice)}</div>` : ''}
+                    ${uiState.cloudError ? `<div role="alert" style="font-size:13px; color:var(--red);">${escapeHtml(uiState.cloudError)}</div>` : ''}
+                    <button type="button" id="btn-cloud-backup-now" class="btn-primary" ${uiState.cloudBusy ? 'disabled' : ''}>${escapeHtml(t(lang, 'settings_cloud_backup_now_btn'))}</button>
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                      <span style="font-size:13px; font-weight:600; color:var(--text); flex:1;">${escapeHtml(t(lang, 'settings_cloud_auto_label'))}</span>
+                      <button type="button" id="btn-cloud-auto" class="btn-secondary" style="width:auto; min-width:80px;" aria-pressed="${s.cloud.autoBackup}">
+                        ${escapeHtml(s.cloud.autoBackup ? t(lang, 'settings_cloud_auto_on') : t(lang, 'settings_cloud_auto_off'))}
+                      </button>
+                    </div>
+                    <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'settings_cloud_auto_needs_pass'))}</div>
+                    <button type="button" id="btn-cloud-forget" class="btn-secondary">${escapeHtml(t(lang, 'settings_cloud_forget_btn'))}</button>
+                    <button type="button" id="btn-cloud-delete-remote" class="btn-secondary" style="color:var(--red); border-color:var(--red);">${escapeHtml(t(lang, 'settings_cloud_delete_remote_btn'))}</button>`
+                  : `
+                    ${uiState.cloudNotice ? `<div style="font-size:13px; font-weight:600; color:var(--primary-dark);">${escapeHtml(uiState.cloudNotice)}</div>` : ''}
+                    <button type="button" id="btn-cloud-create" class="btn-primary">${escapeHtml(t(lang, 'settings_cloud_create_btn'))}</button>
+                    <button type="button" id="btn-cloud-restore" class="btn-secondary">${escapeHtml(t(lang, 'settings_cloud_restore_btn'))}</button>`
+          }
+        </div>
+
         <!-- QRIS image (stays on device; attached to reminders on demand) -->
         <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:10px;">
           <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
@@ -1646,6 +1751,48 @@ function renderBookSwitcherSheet(lang) {
     </div>`;
 }
 
+function renderCloudSheet(lang, mode) {
+  const isCreate = mode === 'cloudCreate';
+  const err = uiState.cloudError ? `<div role="alert" style="font-size:13px; color:var(--red); background:var(--red-light); border-radius:var(--radius-sm); padding:8px 10px;">${escapeHtml(uiState.cloudError)}</div>` : '';
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <form class="sheet-panel" id="form-cloud" data-mode="${mode}">
+        <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
+          ${escapeHtml(t(lang, isCreate ? 'cloud_sheet_create_title' : 'cloud_sheet_restore_title'))}
+        </h2>
+        <p style="font-size:13px; color:var(--text2); line-height:1.5;">${escapeHtml(t(lang, isCreate ? 'cloud_sheet_create_desc' : 'cloud_sheet_restore_desc'))}</p>
+        ${
+          isCreate
+            ? ''
+            : `<div class="field-group">
+                 <label class="field-label" for="cloud-vault-code">${escapeHtml(t(lang, 'cloud_vault_code_label'))}</label>
+                 <input id="cloud-vault-code" name="vaultId" class="field-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required
+                   style="font-family:monospace; letter-spacing:1px;" />
+               </div>`
+        }
+        <div class="field-group">
+          <label class="field-label" for="cloud-passphrase">${escapeHtml(t(lang, 'cloud_passphrase_label'))}</label>
+          <input id="cloud-passphrase" name="passphrase" class="field-input" type="password" autocomplete="${isCreate ? 'new-password' : 'current-password'}" required minlength="8" />
+        </div>
+        ${
+          isCreate
+            ? `<div class="field-group">
+                 <label class="field-label" for="cloud-passphrase-2">${escapeHtml(t(lang, 'cloud_passphrase_confirm_label'))}</label>
+                 <input id="cloud-passphrase-2" name="passphrase2" class="field-input" type="password" autocomplete="new-password" required minlength="8" />
+               </div>`
+            : ''
+        }
+        ${err}
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">${escapeHtml(t(lang, 'sheet_cancel_btn'))}</button>
+          <button type="submit" class="btn-primary" style="flex:1;" ${uiState.cloudBusy ? 'disabled' : ''}>
+            ${escapeHtml(uiState.cloudBusy ? '…' : t(lang, isCreate ? 'cloud_submit_create' : 'cloud_submit_restore'))}
+          </button>
+        </div>
+      </form>
+    </div>`;
+}
+
 function renderPayPlanSheet(lang, supplier) {
   const plan = supplier.payPlan || { date: null, note: '' };
   return `
@@ -1831,6 +1978,8 @@ export function renderApp() {
     sheetHtml = renderPayPlanSheet(lang, selectedCustomer);
   } else if (uiState.activeSheet === 'books') {
     sheetHtml = renderBookSwitcherSheet(lang);
+  } else if (uiState.activeSheet === 'cloudCreate' || uiState.activeSheet === 'cloudRestore') {
+    sheetHtml = renderCloudSheet(lang, uiState.activeSheet);
   } else if (uiState.activeSheet === 'proGate') {
     sheetHtml = renderProGateSheet(lang);
   }
@@ -2262,6 +2411,143 @@ function bindEvents(selectedCustomer, lang) {
       if (!id || !window.confirm(t(lang, 'photo_delete_confirm'))) return;
       await removePhotosForDebts([id]);
       uiState.photoViewerDebtId = null;
+      renderApp();
+    });
+  }
+
+  // Pro+ cloud backup: create vault, restore, back up now, auto toggle, forget, delete remote
+  const cloudProGateBtn = root.querySelector('#btn-cloud-pro-gate');
+  if (cloudProGateBtn) {
+    cloudProGateBtn.addEventListener('click', () => {
+      uiState.billingNotice = '';
+      uiState.activeSheet = 'proGate';
+      renderApp();
+    });
+  }
+  root.querySelectorAll('#btn-cloud-create, #btn-cloud-restore').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      uiState.cloudError = '';
+      uiState.cloudNotice = '';
+      uiState.activeSheet = btn.id === 'btn-cloud-create' ? 'cloudCreate' : 'cloudRestore';
+      renderApp();
+    });
+  });
+  const cloudForm = root.querySelector('#form-cloud');
+  if (cloudForm) {
+    cloudForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (uiState.cloudBusy) return;
+      const fd = new FormData(cloudForm);
+      const passphrase = String(fd.get('passphrase') || '');
+      const mode = cloudForm.dataset.mode;
+      if (!validatePassphrase(passphrase).ok) {
+        uiState.cloudError = t(lang, 'cloud_err_short');
+        renderApp();
+        return;
+      }
+      if (mode === 'cloudCreate' && passphrase !== String(fd.get('passphrase2') || '')) {
+        uiState.cloudError = t(lang, 'cloud_err_mismatch');
+        renderApp();
+        return;
+      }
+      const vaultId = mode === 'cloudCreate' ? newVaultId() : normalizeVaultId(fd.get('vaultId'));
+      if (!isValidVaultId(vaultId)) {
+        uiState.cloudError = t(lang, 'cloud_err_code');
+        renderApp();
+        return;
+      }
+      uiState.cloudBusy = true;
+      uiState.cloudError = '';
+      renderApp();
+      try {
+        if (mode === 'cloudCreate') {
+          const payload = await encryptBackup(exportBackupJson(appState), passphrase);
+          await uploadVault(vaultId, payload);
+          cloudPassphrase = passphrase;
+          appState = updateSettings(appState, { cloud: { vaultId, autoBackup: false, lastBackupAt: payload.updatedAt } });
+          uiState.cloudNotice = t(lang, 'cloud_backup_done');
+        } else {
+          const payload = await downloadVault(vaultId);
+          const json = await decryptBackup(payload, passphrase);
+          const { state } = parseBackup(json);
+          if (!window.confirm(t(lang, 'cloud_restore_confirm'))) {
+            uiState.cloudBusy = false;
+            renderApp();
+            return;
+          }
+          cloudPassphrase = passphrase;
+          appState = saveState({
+            ...state,
+            settings: { ...state.settings, cloud: { vaultId, autoBackup: false, lastBackupAt: payload.updatedAt || null } }
+          });
+          uiState.selectedCustomerId = null;
+          uiState.cloudNotice = t(lang, 'cloud_restore_done');
+        }
+        uiState.activeSheet = null;
+      } catch (err) {
+        console.error('Cloud vault failed:', err);
+        uiState.cloudError = cloudErrorText(lang, err);
+      }
+      uiState.cloudBusy = false;
+      renderApp();
+    });
+  }
+  const cloudBackupNowBtn = root.querySelector('#btn-cloud-backup-now');
+  if (cloudBackupNowBtn) {
+    cloudBackupNowBtn.addEventListener('click', () => {
+      uiState.cloudNotice = '';
+      runCloudBackup(lang);
+    });
+  }
+  const cloudAutoBtn = root.querySelector('#btn-cloud-auto');
+  if (cloudAutoBtn) {
+    cloudAutoBtn.addEventListener('click', () => {
+      const cloud = appState.settings.cloud;
+      const next = !cloud.autoBackup;
+      if (next && !askPassphrase(lang)) return;
+      appState = updateSettings(appState, { cloud: { ...cloud, autoBackup: next } });
+      if (!next) scheduleAutoBackup.cancel();
+      renderApp();
+    });
+  }
+  const cloudCopyBtn = root.querySelector('#btn-cloud-copy');
+  if (cloudCopyBtn) {
+    cloudCopyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(appState.settings.cloud.vaultId);
+        uiState.cloudCopied = true;
+        renderApp();
+        setTimeout(() => { uiState.cloudCopied = false; renderApp(); }, 1500);
+      } catch { /* clipboard unavailable: the code is visible on screen */ }
+    });
+  }
+  const cloudForgetBtn = root.querySelector('#btn-cloud-forget');
+  if (cloudForgetBtn) {
+    cloudForgetBtn.addEventListener('click', () => {
+      if (!window.confirm(t(lang, 'settings_cloud_forget_confirm'))) return;
+      cloudPassphrase = null;
+      scheduleAutoBackup.cancel();
+      appState = updateSettings(appState, { cloud: { vaultId: '', autoBackup: false, lastBackupAt: null } });
+      uiState.cloudNotice = '';
+      renderApp();
+    });
+  }
+  const cloudDeleteRemoteBtn = root.querySelector('#btn-cloud-delete-remote');
+  if (cloudDeleteRemoteBtn) {
+    cloudDeleteRemoteBtn.addEventListener('click', async () => {
+      if (!window.confirm(t(lang, 'settings_cloud_delete_remote_confirm'))) return;
+      const { vaultId } = appState.settings.cloud;
+      try {
+        await deleteVault(vaultId);
+      } catch (err) {
+        uiState.cloudError = cloudErrorText(lang, err);
+        renderApp();
+        return;
+      }
+      cloudPassphrase = null;
+      scheduleAutoBackup.cancel();
+      appState = updateSettings(appState, { cloud: { vaultId: '', autoBackup: false, lastBackupAt: null } });
+      uiState.cloudNotice = '';
       renderApp();
     });
   }
@@ -2833,6 +3119,11 @@ export async function initApp() {
   uiState.screen = appState.settings.hasCompletedSetup ? 'list' : 'setup';
   saveState(appState);
   renderApp();
+
+  // Pro+ auto cloud backup: every saved change schedules one encrypted upload 30 s later
+  onStateSaved(() => {
+    if (appState && appState.settings.cloud.autoBackup && appState.settings.cloud.vaultId) scheduleAutoBackup();
+  });
 
   // Photo notes live in IndexedDB; mirror them into memory for thumbnails (optional, never blocks)
   try {
