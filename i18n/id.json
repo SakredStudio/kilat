@@ -140,5 +140,13 @@
   "no_purchase_found": "Tidak ada pembelian Kilat Pro di akun Google ini.",
   "pro_gate_desc_buy": "Versi gratis mendukung hingga 25 pelanggan. Kilat Pro: pelanggan tanpa batas, ekspor CSV, kartu ringkasan tanpa watermark. Sekali bayar, berlaku selamanya.",
   "settings_language": "Bahasa aplikasi",
-  "settings_language_note": "Pesan pengingat WhatsApp tetap dalam Bahasa Indonesia untuk pelanggan."
+  "settings_language_note": "Pesan pengingat WhatsApp tetap dalam Bahasa Indonesia untuk pelanggan.",
+  "list_due_today_title": "Hari ini",
+  "list_due_count": "{count} jatuh tempo",
+  "due_today_label": "Jatuh tempo hari ini",
+  "due_overdue_label": "Lewat jatuh tempo {hari} hari",
+  "due_upcoming_label": "Jatuh tempo {tanggal}",
+  "sheet_due_date_label": "Jatuh Tempo (opsional)",
+  "sheet_due_date_hint": "Otomatis {days} hari dari tanggal utang. Kosongkan jika tanpa jatuh tempo.",
+  "ledger_due_prefix": "Jatuh tempo:"
 }

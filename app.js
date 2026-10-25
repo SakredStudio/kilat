@@ -19,7 +19,8 @@ import {
   seedDemoData,
   exportBackupJson,
   importBackupJson,
-  exportCsv
+  exportCsv,
+  addDaysIsoDate
 } from './lib/store.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 import { buildReminderMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
@@ -196,12 +197,6 @@ function renderCustomerListScreen(lang, ledger) {
     { id: 'Rendah', label: t(lang, 'filter_low') }
   ];
 
-  const avatarStyles = {
-    Tinggi: 'background:var(--red-light); color:var(--red);',
-    Sedang: 'background:var(--amber-light); color:var(--amber);',
-    Rendah: 'background:var(--primary-light); color:var(--primary-dark);'
-  };
-
   return `
     <div class="screen-body" data-screen="list">
       <div style="background:var(--primary); padding:16px 16px 14px; color:#fff;">
@@ -258,6 +253,8 @@ function renderCustomerListScreen(lang, ledger) {
         </div>
       </div>
 
+      ${renderDueTodaySection(lang, ledger)}
+
       <div style="flex:1; padding:10px 16px 18px; display:flex; flex-direction:column; gap:8px;">
         ${
           filtered.length === 0
@@ -269,53 +266,78 @@ function renderCustomerListScreen(lang, ledger) {
                      : ''
                  }
                </div>`
-            : filtered
-                .map((c) => {
-                  const initials = avatarInitials(c.name);
-                  const avStyle = avatarStyles[c.risk] || avatarStyles.Rendah;
-                  const badgeClass = c.isPaid ? 'risk-Lunas' : `risk-${c.risk}`;
-                  const badgeLabel = c.isPaid ? t(lang, 'risk_paid') : riskLabel(lang, c.risk);
-                  const amountColor =
-                    c.risk === 'Tinggi'
-                      ? 'var(--red)'
-                      : c.risk === 'Sedang'
-                        ? 'var(--amber)'
-                        : 'var(--text)';
-                  return `
-                    <button type="button" class="customer-row-card" data-customer-id="${escapeHtml(c.id)}"
-                      style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; display:flex; align-items:center; gap:12px; text-align:left; width:100%; min-height:68px;">
-                      <div style="width:42px; height:42px; border-radius:50%; ${avStyle} display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0;">
-                        ${escapeHtml(initials)}
-                      </div>
-                      <div style="flex:1; min-width:0;">
-                        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                          <span style="font-weight:700; font-size:14px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                            ${escapeHtml(c.name)}
-                          </span>
-                          <span class="risk-badge ${badgeClass}">
-                            <span class="risk-dot"></span>${escapeHtml(badgeLabel)}
-                          </span>
-                        </div>
-                        <div style="font-size:12px; color:var(--text3); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                          ${escapeHtml(c.note || c.phoneRaw)}
-                        </div>
-                      </div>
-                      <div style="text-align:right; flex-shrink:0;">
-                        <div style="font-weight:700; font-size:14px; color:${amountColor};">
-                          ${escapeHtml(rp(c.balance, { spaced: true }))}
-                        </div>
-                        <div style="font-size:11px; color:var(--text3); margin-top:2px;">
-                          ${c.isPaid ? escapeHtml(t(lang, 'risk_paid')) : `${c.daysOverdue} ${escapeHtml(t(lang, 'days_overdue_suffix'))}`}
-                        </div>
-                      </div>
-                      <span style="color:var(--text3); font-size:16px;" aria-hidden="true">›</span>
-                    </button>
-                  `;
-                })
-                .join('')
+            : filtered.map((c) => renderCustomerRow(lang, c)).join('')
         }
       </div>
     </div>
+  `;
+}
+
+function dueLabel(lang, c) {
+  if (!c || !c.nextDueDate || c.isPaid) return '';
+  if (c.dueStatus === 'today') return t(lang, 'due_today_label');
+  if (c.dueStatus === 'overdue') return t(lang, 'due_overdue_label', { hari: Math.abs(c.daysToDue) });
+  return t(lang, 'due_upcoming_label', { tanggal: formatDateId(c.nextDueDate) });
+}
+
+function renderCustomerRow(lang, c, opts = {}) {
+  const avatarStyles = {
+    Tinggi: 'background:var(--red-light); color:var(--red);',
+    Sedang: 'background:var(--amber-light); color:var(--amber);',
+    Rendah: 'background:var(--primary-light); color:var(--primary-dark);'
+  };
+  const initials = avatarInitials(c.name);
+  const avStyle = avatarStyles[c.risk] || avatarStyles.Rendah;
+  const badgeClass = c.isPaid ? 'risk-Lunas' : `risk-${c.risk}`;
+  const badgeLabel = c.isPaid ? t(lang, 'risk_paid') : riskLabel(lang, c.risk);
+  const amountColor =
+    c.risk === 'Tinggi' ? 'var(--red)' : c.risk === 'Sedang' ? 'var(--amber)' : 'var(--text)';
+  const sub = opts.showDue
+    ? `<span style="color:${c.dueStatus === 'overdue' ? 'var(--red)' : 'var(--amber)'}; font-weight:600;">${escapeHtml(dueLabel(lang, c))}</span>`
+    : escapeHtml(c.note || c.phoneRaw);
+  return `
+    <button type="button" class="customer-row-card" data-customer-id="${escapeHtml(c.id)}"
+      style="background:var(--card); border:1.5px solid ${opts.showDue ? 'var(--amber)' : 'var(--border)'}; border-radius:var(--radius-sm); padding:12px 14px; display:flex; align-items:center; gap:12px; text-align:left; width:100%; min-height:68px;">
+      <div style="width:42px; height:42px; border-radius:50%; ${avStyle} display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0;">
+        ${escapeHtml(initials)}
+      </div>
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          <span style="font-weight:700; font-size:14px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            ${escapeHtml(c.name)}
+          </span>
+          <span class="risk-badge ${badgeClass}">
+            <span class="risk-dot"></span>${escapeHtml(badgeLabel)}
+          </span>
+        </div>
+        <div style="font-size:12px; color:var(--text3); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          ${sub}
+        </div>
+      </div>
+      <div style="text-align:right; flex-shrink:0;">
+        <div style="font-weight:700; font-size:14px; color:${amountColor};">
+          ${escapeHtml(rp(c.balance, { spaced: true }))}
+        </div>
+        <div style="font-size:11px; color:var(--text3); margin-top:2px;">
+          ${c.isPaid ? escapeHtml(t(lang, 'risk_paid')) : `${c.daysOverdue} ${escapeHtml(t(lang, 'days_overdue_suffix'))}`}
+        </div>
+      </div>
+      <span style="color:var(--text3); font-size:16px;" aria-hidden="true">›</span>
+    </button>
+  `;
+}
+
+function renderDueTodaySection(lang, ledger) {
+  const due = [...ledger.dueOverdue, ...ledger.dueToday];
+  if (due.length === 0 || uiState.searchQuery || uiState.riskFilter !== 'Semua') return '';
+  return `
+    <section aria-label="${escapeHtml(t(lang, 'list_due_today_title'))}" style="padding:12px 16px 4px; display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:13px; font-weight:700; color:var(--text2);">📅 ${escapeHtml(t(lang, 'list_due_today_title'))}</div>
+        <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'list_due_count', { count: due.length }))}</div>
+      </div>
+      ${due.map((c) => renderCustomerRow(lang, c, { showDue: true })).join('')}
+    </section>
   `;
 }
 
@@ -362,8 +384,15 @@ function renderCustomerDetailScreen(lang, customer) {
             </div>
             ${
               !customer.isPaid
-                ? `<div style="font-size:12px; font-weight:600; color:var(--text2); background:var(--bg2); padding:5px 10px; border-radius:99px;">
-                     ${escapeHtml(t(lang, 'reminder_overdue_days', { hari: customer.daysOverdue }))}
+                ? `<div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                     <div style="font-size:12px; font-weight:600; color:var(--text2); background:var(--bg2); padding:5px 10px; border-radius:99px;">
+                       ${escapeHtml(t(lang, 'reminder_overdue_days', { hari: customer.daysOverdue }))}
+                     </div>
+                     ${
+                       customer.nextDueDate
+                         ? `<div style="font-size:11px; font-weight:600; color:${customer.dueStatus === 'overdue' ? 'var(--red)' : customer.dueStatus === 'today' ? 'var(--amber)' : 'var(--text3)'};">📅 ${escapeHtml(dueLabel(lang, customer))}</div>`
+                         : ''
+                     }
                    </div>`
                 : ''
             }
@@ -433,6 +462,11 @@ function renderCustomerDetailScreen(lang, customer) {
                              <div style="font-size:13px; color:var(--text); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                                ${escapeHtml(entry.note || typeLabel)}
                              </div>
+                             ${
+                               isDebt && entry.dueDate
+                                 ? `<div style="font-size:11px; color:var(--text3); margin-top:2px;">${escapeHtml(t(lang, 'ledger_due_prefix'))} ${escapeHtml(formatDateId(entry.dueDate))}</div>`
+                                 : ''
+                             }
                            </div>
                            <div style="font-weight:700; font-size:14px; color:${amtColor}; flex-shrink:0; margin-left:10px;">
                              ${sign} ${escapeHtml(rp(entry.amountIdr, { spaced: true }))}
@@ -460,7 +494,8 @@ function renderReminderScreen(lang, customer) {
     nama: customer.name,
     jumlah: customer.balance,
     hari: customer.daysOverdue,
-    warung: w.name
+    warung: w.name,
+    tanggal: customer.nextDueDate || ''
   });
 
   const currentMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : generatedMsg;
@@ -861,6 +896,7 @@ function renderAddCustomerSheet(lang) {
 
 function renderAddDebtSheet(lang, customer) {
   const today = localIsoDate(new Date());
+  const defaultDue = addDaysIsoDate(today, appState.warung.dueDays);
   const quickAmounts = [25000, 50000, 100000, 200000];
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
@@ -889,10 +925,17 @@ function renderAddDebtSheet(lang, customer) {
           <input id="debt-note" name="note" class="field-input" type="text"
             placeholder="${escapeHtml(t(lang, 'sheet_note_debt_placeholder'))}" />
         </div>
-        <div class="field-group">
-          <label class="field-label" for="debt-date">${escapeHtml(t(lang, 'sheet_date_label'))}</label>
-          <input id="debt-date" name="date" class="field-input" type="date" value="${today}" required />
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div class="field-group">
+            <label class="field-label" for="debt-date">${escapeHtml(t(lang, 'sheet_date_label'))}</label>
+            <input id="debt-date" name="date" class="field-input" type="date" value="${today}" required />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="debt-due-date">${escapeHtml(t(lang, 'sheet_due_date_label'))}</label>
+            <input id="debt-due-date" name="dueDate" class="field-input" type="date" value="${defaultDue}" />
+          </div>
         </div>
+        <div style="font-size:12px; color:var(--text3); margin-top:-6px;">${escapeHtml(t(lang, 'sheet_due_date_hint', { days: appState.warung.dueDays }))}</div>
         <div style="display:flex; gap:10px; margin-top:6px;">
           <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">
             ${escapeHtml(t(lang, 'sheet_cancel_btn'))}
@@ -1411,7 +1454,8 @@ function bindEvents(selectedCustomer, lang) {
         customerId: selectedCustomer.id,
         amountIdr: fd.get('amountIdr'),
         note: fd.get('note'),
-        date: fd.get('date')
+        date: fd.get('date'),
+        dueDate: String(fd.get('dueDate') || '') || null
       });
       uiState.activeSheet = null;
       showUndoToast(t(lang, 'undo_toast_debt'));

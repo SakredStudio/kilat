@@ -140,5 +140,13 @@
   "no_purchase_found": "No Kilat Pro purchase found on this Google account.",
   "pro_gate_desc_buy": "The free tier supports up to 25 customers. Kilat Pro: unlimited customers, CSV export, watermark-free summary cards. One-time payment, yours forever.",
   "settings_language": "App language",
-  "settings_language_note": "WhatsApp reminder texts stay in Bahasa Indonesia for your customers."
+  "settings_language_note": "WhatsApp reminder texts stay in Bahasa Indonesia for your customers.",
+  "list_due_today_title": "Due today",
+  "list_due_count": "{count} due",
+  "due_today_label": "Due today",
+  "due_overdue_label": "{hari} days past due",
+  "due_upcoming_label": "Due {tanggal}",
+  "sheet_due_date_label": "Due Date (optional)",
+  "sheet_due_date_hint": "Defaults to {days} days after the credit date. Clear it for no due date.",
+  "ledger_due_prefix": "Due:"
 }
