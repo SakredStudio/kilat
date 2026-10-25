@@ -31,6 +31,11 @@ import {
 
 let appState = null;
 let undoTimer = null;
+function localIsoDate(d) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 let uiState = {
   screen: 'setup', // 'setup' | 'list' | 'detail' | 'reminder' | 'card' | 'settings'
   selectedCustomerId: null,
@@ -843,7 +848,7 @@ function renderAddCustomerSheet(lang) {
 }
 
 function renderAddDebtSheet(lang, customer) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate(new Date());
   const quickAmounts = [25000, 50000, 100000, 200000];
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
@@ -890,7 +895,7 @@ function renderAddDebtSheet(lang, customer) {
 }
 
 function renderRecordPaySheet(lang, customer) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate(new Date());
   const currentBalance = customer?.balance || 0;
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
