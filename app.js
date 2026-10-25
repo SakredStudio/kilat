@@ -46,7 +46,8 @@ import {
   shareOrDownloadCard
 } from './lib/share-card.js';
 import { buildReceiptModel, drawReceiptToCanvas, shareOrDownloadReceipt } from './lib/receipt-card.js';
-import { resizeImageFile, putPhoto, deletePhoto, getAllPhotos, clearPhotos, importPhotos, PHOTO_MAX_PX } from './lib/photos.js';
+import { resizeImageFile, putPhoto, deletePhoto, getAllPhotos, clearPhotos, importPhotos, PHOTO_MAX_PX, QRIS_MAX_PX } from './lib/photos.js';
+import { qrisKey, withQrisLine, buildQrisSharePayload, shareReminderWithQris } from './lib/qris.js';
 import { computeStats } from './lib/stats.js';
 
 let appState = null;
@@ -77,8 +78,14 @@ let uiState = {
   photos: {}, // debtId -> dataURL, mirrored from IndexedDB (lib/photos.js)
   pendingPhotoDataUrl: null, // picked in the add-debt sheet, saved with the new debt
   photoViewerDebtId: null,
-  book: 'customer' // 'customer' (piutang) | 'supplier' (hutang)
+  book: 'customer', // 'customer' (piutang) | 'supplier' (hutang)
+  attachQris: false // reminder screen: "+ lampirkan QRIS" toggle
 };
+
+/** The active warung's QRIS image (dataURL) or null. Lives in IndexedDB, mirrored in uiState.photos. */
+function qrisDataUrl() {
+  return uiState.photos[qrisKey(appState.activeBookId)] || null;
+}
 
 // Two books, one engine: the active book decides which store functions and arrays the screens use.
 const BOOK_FNS = {
@@ -732,7 +739,10 @@ function renderReminderScreen(lang, customer) {
     : composeReminder(customer, activeTone);
 
   const currentMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : generatedMsg;
-  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, currentMsg);
+  const qris = !isSupplierBook() ? qrisDataUrl() : null;
+  const qrisOn = Boolean(qris && uiState.attachQris);
+  const shownMsg = qrisOn ? withQrisLine(currentMsg) : currentMsg;
+  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, shownMsg);
   const firstName = customer.name.split(' ')[0] || customer.name;
 
   const pillBg =
@@ -799,7 +809,18 @@ function renderReminderScreen(lang, customer) {
                </div>`
         }
 
-        ${renderWaBubble(lang, fmtPhone(customer.phone62 || customer.phoneRaw), currentMsg)}
+        ${renderWaBubble(lang, fmtPhone(customer.phone62 || customer.phoneRaw), shownMsg)}
+        ${
+          qris
+            ? `<div style="display:flex; align-items:center; gap:10px; background:var(--card); border:1.5px solid ${qrisOn ? 'var(--primary)' : 'var(--border)'}; border-radius:var(--radius-sm); padding:8px 10px;">
+                 <span class="photo-thumb" aria-hidden="true"><img src="${qris}" alt="" /></span>
+                 <div style="flex:1; min-width:0; font-size:12px; color:var(--text3); line-height:1.4;">${escapeHtml(t(lang, 'reminder_qris_note'))}</div>
+                 <button type="button" id="btn-toggle-qris" aria-pressed="${qrisOn}" class="btn-secondary" style="width:auto; font-size:12px; white-space:nowrap; ${qrisOn ? 'border-color:var(--primary); color:var(--primary-dark); background:var(--primary-light);' : ''}">
+                   ${escapeHtml(qrisOn ? t(lang, 'reminder_attach_qris_on') : t(lang, 'reminder_attach_qris_toggle'))}
+                 </button>
+               </div>`
+            : ''
+        }
 
         <div class="field-group">
           <label class="field-label" for="reminder-custom-textarea">
@@ -810,11 +831,19 @@ function renderReminderScreen(lang, customer) {
         </div>
 
         <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
-          <a id="btn-send-wa-link" href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer"
-            class="btn-primary btn-wa tap-target">
-            <span>${uiState.sentFeedback ? '✓' : '💬'}</span>
-            <span>${escapeHtml(uiState.sentFeedback ? t(lang, 'reminder_Sent_wa_cta') : t(lang, 'reminder_send_wa_cta', { nama: firstName }))}</span>
-          </a>
+          ${
+            qrisOn
+              ? `<button type="button" id="btn-send-wa-qris" data-wa-href="${escapeHtml(waHref)}" class="btn-primary btn-wa">
+                   <span>${uiState.sentFeedback ? '✓' : '💬'}</span>
+                   <span>${escapeHtml(uiState.sentFeedback ? t(lang, 'reminder_Sent_wa_cta') : t(lang, 'reminder_send_wa_qris_cta', { nama: firstName }))}</span>
+                 </button>
+                 ${uiState.qrisFallbackHint ? `<div style="font-size:12px; color:var(--text2); background:var(--amber-light); border-radius:var(--radius-sm); padding:8px 10px; line-height:1.5;">${escapeHtml(t(lang, 'reminder_qris_fallback_hint'))}</div>` : ''}`
+              : `<a id="btn-send-wa-link" href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer"
+                   class="btn-primary btn-wa tap-target">
+                   <span>${uiState.sentFeedback ? '✓' : '💬'}</span>
+                   <span>${escapeHtml(uiState.sentFeedback ? t(lang, 'reminder_Sent_wa_cta') : t(lang, 'reminder_send_wa_cta', { nama: firstName }))}</span>
+                 </a>`
+          }
           ${
             isSupplierBook()
               ? ''
@@ -1299,6 +1328,27 @@ function renderSettingsScreen(lang) {
                    uiState.billingAvailable ? t(lang, 'pro_buy_btn', { price: uiState.proPrice }) : t(lang, 'pro_gate_coming_soon')
                  )}</button>`
           }
+        </div>
+
+        <!-- QRIS image (stays on device; attached to reminders on demand) -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:10px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_qris_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_qris_desc'))}</div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            ${
+              qrisDataUrl()
+                ? `<button type="button" class="photo-thumb btn-view-photo" data-debt-id="${escapeHtml(qrisKey(appState.activeBookId))}" aria-label="QRIS" style="width:72px; height:72px;"><img src="${qrisDataUrl()}" alt="QRIS" /></button>`
+                : ''
+            }
+            <div style="font-size:12px; color:var(--text3); flex:1;">${escapeHtml(qrisDataUrl() ? t(lang, 'settings_qris_ready') : t(lang, 'settings_qris_none'))}</div>
+          </div>
+          <label for="input-qris-file" class="btn-secondary tap-target" style="cursor:pointer;">
+            ${escapeHtml(qrisDataUrl() ? t(lang, 'settings_qris_replace_btn') : t(lang, 'settings_qris_upload_btn'))}
+          </label>
+          <input id="input-qris-file" type="file" accept="image/*" style="display:none;" />
+          ${qrisDataUrl() ? `<button type="button" id="btn-delete-qris" class="btn-secondary" style="color:var(--red); border-color:var(--red);">${escapeHtml(t(lang, 'settings_qris_delete_btn'))}</button>` : ''}
         </div>
 
         <!-- Multi-warung -->
@@ -2134,6 +2184,8 @@ function bindEvents(selectedCustomer, lang) {
       uiState.reminderTone = appState.settings.tone || 'sopan';
       uiState.messageEdited = false;
       uiState.sentFeedback = false;
+      uiState.attachQris = false;
+      uiState.qrisFallbackHint = false;
       uiState.screen = 'reminder';
       renderApp();
     });
@@ -2210,6 +2262,65 @@ function bindEvents(selectedCustomer, lang) {
       if (!id || !window.confirm(t(lang, 'photo_delete_confirm'))) return;
       await removePhotosForDebts([id]);
       uiState.photoViewerDebtId = null;
+      renderApp();
+    });
+  }
+
+  // QRIS: upload / delete in Settings, toggle + send on the reminder screen
+  const qrisInput = root.querySelector('#input-qris-file');
+  if (qrisInput) {
+    qrisInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const key = qrisKey(appState.activeBookId);
+        const dataUrl = await resizeImageFile(file, QRIS_MAX_PX, 0.9);
+        await putPhoto(key, dataUrl);
+        uiState.photos[key] = dataUrl;
+        renderApp();
+      } catch (err) {
+        console.error('QRIS upload failed:', err);
+        window.alert(t(lang, 'photo_failed'));
+      }
+    });
+  }
+  const deleteQrisBtn = root.querySelector('#btn-delete-qris');
+  if (deleteQrisBtn) {
+    deleteQrisBtn.addEventListener('click', async () => {
+      if (!window.confirm(t(lang, 'settings_qris_delete_confirm'))) return;
+      await removePhotosForDebts([qrisKey(appState.activeBookId)]);
+      uiState.attachQris = false;
+      renderApp();
+    });
+  }
+  const toggleQrisBtn = root.querySelector('#btn-toggle-qris');
+  if (toggleQrisBtn) {
+    toggleQrisBtn.addEventListener('click', () => {
+      uiState.attachQris = !uiState.attachQris;
+      uiState.qrisFallbackHint = false;
+      uiState.sentFeedback = false;
+      renderApp();
+    });
+  }
+  const sendWaQrisBtn = root.querySelector('#btn-send-wa-qris');
+  if (sendWaQrisBtn && selectedCustomer) {
+    sendWaQrisBtn.addEventListener('click', async () => {
+      const qris = qrisDataUrl();
+      if (!qris) return;
+      const waHref = sendWaQrisBtn.getAttribute('data-wa-href') || '';
+      const baseMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : composeReminder(selectedCustomer, uiState.reminderTone || 'sopan');
+      try {
+        const payload = buildQrisSharePayload({ message: baseMsg, qrisDataUrl: qris, warungName: wb().warung.name });
+        const res = await shareReminderWithQris(payload, { waHref });
+        if (res.method === 'cancelled') return;
+        uiState.qrisFallbackHint = res.method === 'fallback';
+        if (!uiState.sentFeedback) {
+          appState = logReminder(appState, { customerId: selectedCustomer.id, tone: uiState.reminderTone || 'sopan', book: 'customer' });
+        }
+        uiState.sentFeedback = true;
+      } catch (err) {
+        console.error('QRIS share failed:', err);
+      }
       renderApp();
     });
   }

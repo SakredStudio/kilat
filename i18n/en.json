@@ -275,5 +275,18 @@
   "undo_toast_book": "Shop deleted",
   "settings_books_title": "Multi-shop (Pro)",
   "settings_books_desc": "Families running 2–3 kiosks: switch books from the shop name above the customer list. Free 1 shop, Pro up to 5.",
-  "settings_books_open_btn": "Manage shops"
+  "settings_books_open_btn": "Manage shops",
+  "settings_qris_title": "Shop QRIS",
+  "settings_qris_desc": "Keep your shop's static QRIS image on this phone. A reminder can attach it so the customer scans and pays the shop directly. Kilat never receives money.",
+  "settings_qris_upload_btn": "📷 Upload QRIS image",
+  "settings_qris_replace_btn": "🔄 Replace image",
+  "settings_qris_delete_btn": "🗑️ Delete QRIS",
+  "settings_qris_delete_confirm": "Delete the QRIS image from this phone?",
+  "settings_qris_none": "No QRIS image for this shop yet.",
+  "settings_qris_ready": "QRIS saved for this shop (max 1000 px).",
+  "reminder_attach_qris_toggle": "+ Attach QRIS",
+  "reminder_attach_qris_on": "✓ QRIS attached",
+  "reminder_send_wa_qris_cta": "Send to WhatsApp {nama} + QRIS",
+  "reminder_qris_fallback_hint": "WhatsApp opened with the text; the QRIS image was downloaded to the phone. Send this image in WhatsApp after the message.",
+  "reminder_qris_note": "The customer pays the shop directly by scanning this QRIS. Kilat only attaches the image."
 }

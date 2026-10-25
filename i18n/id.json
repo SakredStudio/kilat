@@ -275,5 +275,18 @@
   "undo_toast_book": "Warung dihapus",
   "settings_books_title": "Multi-warung (Pro)",
   "settings_books_desc": "Keluarga yang menjalankan 2–3 kios: ganti buku dari nama warung di atas daftar pelanggan. Gratis 1 warung, Pro hingga 5.",
-  "settings_books_open_btn": "Kelola warung"
+  "settings_books_open_btn": "Kelola warung",
+  "settings_qris_title": "QRIS warung",
+  "settings_qris_desc": "Simpan gambar QRIS statis warung di HP ini. Pengingat bisa melampirkannya agar pelanggan scan dan membayar langsung ke warung. Kilat tidak pernah menerima uang.",
+  "settings_qris_upload_btn": "📷 Unggah gambar QRIS",
+  "settings_qris_replace_btn": "🔄 Ganti gambar",
+  "settings_qris_delete_btn": "🗑️ Hapus QRIS",
+  "settings_qris_delete_confirm": "Hapus gambar QRIS dari HP ini?",
+  "settings_qris_none": "Belum ada gambar QRIS untuk warung ini.",
+  "settings_qris_ready": "QRIS tersimpan untuk warung ini (maks. 1000 px).",
+  "reminder_attach_qris_toggle": "+ Lampirkan QRIS",
+  "reminder_attach_qris_on": "✓ QRIS dilampirkan",
+  "reminder_send_wa_qris_cta": "Kirim ke WhatsApp {nama} + QRIS",
+  "reminder_qris_fallback_hint": "WhatsApp dibuka dengan teksnya; gambar QRIS diunduh ke HP. Kirim gambar ini di WhatsApp setelah pesannya.",
+  "reminder_qris_note": "Pelanggan membayar langsung ke warung dengan scan QRIS ini. Kilat hanya melampirkan gambarnya."
 }
