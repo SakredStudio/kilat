@@ -36,6 +36,7 @@ import {
 } from './lib/share-card.js';
 import { buildReceiptModel, drawReceiptToCanvas, shareOrDownloadReceipt } from './lib/receipt-card.js';
 import { resizeImageFile, putPhoto, deletePhoto, getAllPhotos, clearPhotos, importPhotos, PHOTO_MAX_PX } from './lib/photos.js';
+import { computeStats } from './lib/stats.js';
 
 let appState = null;
 let undoTimer = null;
@@ -244,6 +245,10 @@ function renderCustomerListScreen(lang, ledger) {
             </h1>
           </div>
           <div style="display:flex; gap:6px;">
+            <button type="button" id="btn-open-stats" aria-label="${escapeHtml(t(lang, 'stats_title'))}" title="${escapeHtml(t(lang, 'stats_title'))}"
+              style="background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.35); border-radius:10px; color:#fff; font-size:16px; min-width:44px; min-height:44px; padding:0 10px;">
+              📊
+            </button>
             <button type="button" id="btn-open-add-customer"
               style="background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.35); border-radius:10px; color:#fff; font-weight:700; font-size:13px; padding:8px 12px; min-height:44px;">
               ${escapeHtml(t(lang, 'list_add_customer'))}
@@ -1029,6 +1034,99 @@ function renderReceiptScreen(lang, customer) {
     </div>`;
 }
 
+function renderStatsScreen(lang) {
+  const st = computeStats(appState);
+  const monthLabel = (key) => {
+    const [y, m] = key.split('-');
+    return formatDateId(`${y}-${m}-01`).slice(2); // "Okt 2026"
+  };
+  const delta = st.collectedDeltaPct;
+  const deltaHtml = delta === null
+    ? ''
+    : `<span style="font-size:12px; font-weight:700; color:${delta >= 0 ? 'var(--primary-dark)' : 'var(--red)'};">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}%</span>`;
+  const weekShort = (iso) => formatDateId(iso).replace(/\s\d{4}$/, '');
+
+  return `
+    <div class="screen-body" data-screen="stats">
+      <div class="topbar">
+        <button type="button" class="back-btn" id="btn-back-from-stats" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:15px; color:var(--text);">${escapeHtml(t(lang, 'stats_title'))}</div>
+          <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'stats_subtitle'))}</div>
+        </div>
+      </div>
+
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px;">
+            <div style="font-size:11px; color:var(--text3);">${escapeHtml(t(lang, 'stats_outstanding_now'))}</div>
+            <div style="font-family:var(--font-display); font-size:19px; color:var(--text); margin-top:2px; overflow-wrap:anywhere;">${escapeHtml(rp(st.totalOutstanding, { spaced: true }))}</div>
+            <div style="font-size:11px; color:var(--text3);">${escapeHtml(t(lang, 'card_active_debtors', { count: st.activeCount }))}</div>
+          </div>
+          <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px;">
+            <div style="font-size:11px; color:var(--text3);">${escapeHtml(t(lang, 'stats_reminders_month'))}</div>
+            <div style="font-family:var(--font-display); font-size:19px; color:var(--text); margin-top:2px;">${st.remindersThisMonth}</div>
+            <div style="font-size:11px; color:var(--text3);">${escapeHtml(monthLabel(st.thisMonth))}</div>
+          </div>
+        </div>
+
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:10px;">${escapeHtml(t(lang, 'stats_weekly_title'))}</div>
+          <div class="stats-bars" role="img" aria-label="${escapeHtml(t(lang, 'stats_weekly_title'))}">
+            ${st.weekly
+              .map(
+                (w) => `
+                  <div class="stats-bar-col" title="${escapeHtml(formatDateId(w.weekStart))} – ${escapeHtml(formatDateId(w.weekEnd))}: ${escapeHtml(rp(w.outstanding, { spaced: true }))}">
+                    <div class="stats-bar-track">
+                      <div class="stats-bar-fill ${w.isCurrent ? 'current' : ''}" style="height:${Math.max(w.outstanding > 0 ? 4 : 0, Math.round(w.ratio * 100))}%;"></div>
+                    </div>
+                    <div class="stats-bar-label">${escapeHtml(weekShort(w.weekStart))}</div>
+                  </div>`
+              )
+              .join('')}
+          </div>
+          <div style="font-size:11px; color:var(--text3); margin-top:8px; text-align:right;">${escapeHtml(t(lang, 'stats_weekly_max', { jumlah: rp(st.maxWeekly, { spaced: true }) }))}</div>
+        </div>
+
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:10px;">${escapeHtml(t(lang, 'stats_collected_title'))}</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <div style="font-size:11px; color:var(--text3);">${escapeHtml(t(lang, 'stats_collected_this_month'))} · ${escapeHtml(monthLabel(st.thisMonth))}</div>
+              <div style="font-size:16px; font-weight:700; color:var(--primary-dark); margin-top:2px;">${escapeHtml(rp(st.collectedThisMonth, { spaced: true }))} ${deltaHtml}</div>
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--text3);">${escapeHtml(t(lang, 'stats_collected_last_month'))} · ${escapeHtml(monthLabel(st.lastMonth))}</div>
+              <div style="font-size:16px; font-weight:700; color:var(--text); margin-top:2px;">${escapeHtml(rp(st.collectedLastMonth, { spaced: true }))}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:10px;">${escapeHtml(t(lang, 'stats_top_title'))}</div>
+          ${
+            st.topDebtors.length === 0
+              ? `<p style="font-size:13px; color:var(--text3); text-align:center; padding:8px 0;">${escapeHtml(t(lang, 'stats_empty'))}</p>`
+              : `<div style="display:flex; flex-direction:column; gap:6px;">
+                   ${st.topDebtors
+                     .map(
+                       (c) => `
+                         <button type="button" class="customer-row-card" data-customer-id="${escapeHtml(c.id)}"
+                           style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 12px; text-align:left; width:100%; min-height:48px;">
+                           <span style="width:24px; height:24px; border-radius:50%; background:var(--bg2); display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--text2); flex-shrink:0;">${c.rank}</span>
+                           <span style="flex:1; min-width:0; font-size:14px; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c.name)}</span>
+                           <span style="font-size:11px; color:var(--text3); flex-shrink:0;">${c.daysOverdue} ${escapeHtml(t(lang, 'days_overdue_suffix'))}</span>
+                           <span style="font-size:14px; font-weight:700; color:${c.risk === 'Tinggi' ? 'var(--red)' : c.risk === 'Sedang' ? 'var(--amber)' : 'var(--text)'}; flex-shrink:0;">${escapeHtml(rp(c.balance, { spaced: true }))}</span>
+                         </button>`
+                     )
+                     .join('')}
+                 </div>`
+          }
+        </div>
+      </div>
+    </div>`;
+}
+
 /** Sample rendering of a custom template (or the default sopan tone when empty). */
 function templatePreview(template) {
   return buildReminderMessage({
@@ -1093,6 +1191,15 @@ function renderSettingsScreen(lang) {
                    uiState.billingAvailable ? t(lang, 'pro_buy_btn', { price: uiState.proPrice }) : t(lang, 'pro_gate_coming_soon')
                  )}</button>`
           }
+        </div>
+
+        <!-- Statistik -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'stats_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'stats_subtitle'))}</div>
+          <button type="button" id="btn-open-stats" class="btn-secondary">📊 ${escapeHtml(t(lang, 'settings_stats_btn'))}</button>
         </div>
 
         <!-- Pro: custom reminder template -->
@@ -1421,7 +1528,7 @@ function renderBottomNav(lang) {
         .map((item) => {
           const active =
             uiState.screen === item.id ||
-            (['detail', 'reminder', 'card', 'broadcast', 'receipt'].includes(uiState.screen) && item.id === 'list');
+            (['detail', 'reminder', 'card', 'broadcast', 'receipt', 'stats'].includes(uiState.screen) && item.id === 'list');
           return `
             <button type="button" class="bottom-nav-btn ${active ? 'active' : ''}" data-nav="${item.id}">
               <span class="bottom-nav-icon" aria-hidden="true">${item.icon}</span>
@@ -1457,6 +1564,8 @@ export function renderApp() {
     screenHtml = renderShareCardScreen(lang);
   } else if (uiState.screen === 'broadcast') {
     screenHtml = renderBroadcastScreen(lang, ledger);
+  } else if (uiState.screen === 'stats') {
+    screenHtml = renderStatsScreen(lang);
   } else if (uiState.screen === 'settings') {
     screenHtml = renderSettingsScreen(lang);
   } else {
@@ -1595,6 +1704,23 @@ function bindEvents(selectedCustomer, lang) {
   if (openRecordPayBtn) {
     openRecordPayBtn.addEventListener('click', () => {
       uiState.activeSheet = 'recordPay';
+      renderApp();
+    });
+  }
+
+  // Statistik screen
+  const openStatsBtn = root.querySelector('#btn-open-stats');
+  if (openStatsBtn) {
+    openStatsBtn.addEventListener('click', () => {
+      uiState.statsReturnScreen = uiState.screen === 'settings' ? 'settings' : 'list';
+      uiState.screen = 'stats';
+      renderApp();
+    });
+  }
+  const backFromStatsBtn = root.querySelector('#btn-back-from-stats');
+  if (backFromStatsBtn) {
+    backFromStatsBtn.addEventListener('click', () => {
+      uiState.screen = uiState.statsReturnScreen || 'list';
       renderApp();
     });
   }

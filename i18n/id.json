@@ -214,5 +214,17 @@
   "settings_template_active": "Template aktif: tersedia sebagai nada \"Sendiri\".",
   "settings_template_empty_hint": "Belum ada template. Kosong = memakai 3 nada bawaan.",
   "tone_custom_label": "✍️ Sendiri",
-  "tone_custom_desc": "Template Pro"
+  "tone_custom_desc": "Template Pro",
+  "stats_title": "Statistik",
+  "stats_subtitle": "Piutang per minggu, penagihan bulan ini, penunggak terbesar",
+  "settings_stats_btn": "Lihat Statistik",
+  "stats_outstanding_now": "Piutang saat ini",
+  "stats_reminders_month": "Pengingat bulan ini",
+  "stats_weekly_title": "Piutang 8 minggu terakhir",
+  "stats_weekly_max": "Tertinggi: {jumlah}",
+  "stats_collected_title": "Pembayaran yang dicatat",
+  "stats_collected_this_month": "Bulan ini",
+  "stats_collected_last_month": "Bulan lalu",
+  "stats_top_title": "5 penunggak terbesar",
+  "stats_empty": "Belum ada piutang yang tercatat."
 }

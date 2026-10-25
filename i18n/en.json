@@ -214,5 +214,17 @@
   "settings_template_active": "Template active: available as the \"Custom\" tone.",
   "settings_template_empty_hint": "No template yet. Empty = the 3 built-in tones are used.",
   "tone_custom_label": "✍️ Custom",
-  "tone_custom_desc": "Pro template"
+  "tone_custom_desc": "Pro template",
+  "stats_title": "Statistics",
+  "stats_subtitle": "Outstanding by week, collected this month, top debtors",
+  "settings_stats_btn": "View Statistics",
+  "stats_outstanding_now": "Outstanding now",
+  "stats_reminders_month": "Reminders this month",
+  "stats_weekly_title": "Outstanding, last 8 weeks",
+  "stats_weekly_max": "Peak: {jumlah}",
+  "stats_collected_title": "Payments recorded",
+  "stats_collected_this_month": "This month",
+  "stats_collected_last_month": "Last month",
+  "stats_top_title": "Top 5 debtors",
+  "stats_empty": "No outstanding credit recorded yet."
 }
