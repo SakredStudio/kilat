@@ -175,5 +175,19 @@
   "broadcast_empty": "Tidak ada pelanggan yang menunggak saat ini. Mantap!",
   "broadcast_last_reminded": "Terakhir diingatkan {waktu}",
   "detail_last_reminded": "Terakhir diingatkan: {waktu}",
-  "detail_never_reminded": "Belum pernah diingatkan"
+  "detail_never_reminded": "Belum pernah diingatkan",
+  "receipt_banner_title": "Pembayaran dicatat ✅",
+  "receipt_banner_cta": "🧾 Kirim bukti ke {nama}",
+  "receipt_row_btn": "🧾 Bukti",
+  "receipt_title": "Bukti Catatan Pembayaran",
+  "receipt_subtitle": "Kirim ke pelanggan sebagai tanda catatan sudah diperbarui",
+  "receipt_paid_label": "Dibayar (dicatat)",
+  "receipt_remaining_label": "Sisa catatan",
+  "receipt_lunas_label": "LUNAS",
+  "receipt_honesty_line": "Catatan dibuat oleh pemilik warung. Pembayaran terjadi langsung di warung; Kilat hanya mencatat.",
+  "receipt_share_cta": "Kirim bukti (gambar) ke WhatsApp",
+  "receipt_text_cta": "Kirim teks saja ke WhatsApp {nama}",
+  "receipt_download_cta": "Unduh Gambar PNG (1080×1350)",
+  "receipt_back_btn": "← Kembali ke Pelanggan",
+  "receipt_fallback_hint": "Jika WhatsApp tidak terbuka dengan gambar, unduh PNG lalu kirim gambarnya di WhatsApp."
 }

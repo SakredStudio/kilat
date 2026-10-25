@@ -175,5 +175,19 @@
   "broadcast_empty": "Nobody is overdue right now. Nice!",
   "broadcast_last_reminded": "Last reminded {waktu}",
   "detail_last_reminded": "Last reminded: {waktu}",
-  "detail_never_reminded": "Never reminded yet"
+  "detail_never_reminded": "Never reminded yet",
+  "receipt_banner_title": "Payment recorded ✅",
+  "receipt_banner_cta": "🧾 Send receipt to {nama}",
+  "receipt_row_btn": "🧾 Receipt",
+  "receipt_title": "Payment Record Receipt",
+  "receipt_subtitle": "Send to the customer as proof the record was updated",
+  "receipt_paid_label": "Paid (recorded)",
+  "receipt_remaining_label": "Remaining balance",
+  "receipt_lunas_label": "PAID IN FULL",
+  "receipt_honesty_line": "Record written by the shop owner. The payment happened at the shop; Kilat only keeps the record.",
+  "receipt_share_cta": "Send receipt (image) to WhatsApp",
+  "receipt_text_cta": "Send text only to WhatsApp {nama}",
+  "receipt_download_cta": "Download PNG Image (1080×1350)",
+  "receipt_back_btn": "← Back to Customer",
+  "receipt_fallback_hint": "If WhatsApp does not open with the image, download the PNG and send it in WhatsApp."
 }

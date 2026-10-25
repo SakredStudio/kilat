@@ -34,6 +34,7 @@ import {
   drawShareCardToCanvas,
   shareOrDownloadCard
 } from './lib/share-card.js';
+import { buildReceiptModel, drawReceiptToCanvas, shareOrDownloadReceipt } from './lib/receipt-card.js';
 
 let appState = null;
 let undoTimer = null;
@@ -57,7 +58,9 @@ let uiState = {
   billingBusy: false,
   billingNotice: '',
   proPrice: PRO_PRICE_FALLBACK,
-  broadcast: { index: 0, sentIds: [], tone: 'sopan' }
+  broadcast: { index: 0, sentIds: [], tone: 'sopan' },
+  lastPaymentId: null, // payment just recorded -> "Kirim bukti" banner on detail
+  receiptPaymentId: null // payment shown on the receipt screen
 };
 
 function formatDateTimeShort(iso) {
@@ -380,6 +383,9 @@ function renderCustomerDetailScreen(lang, customer) {
         ? 'var(--amber)'
         : 'var(--primary-dark)';
   const lastReminded = latestReminderByCustomer(appState.reminders)[customer.id] || null;
+  const justPaid = uiState.lastPaymentId
+    ? appState.payments.find((p) => p.id === uiState.lastPaymentId && p.customerId === customer.id) || null
+    : null;
 
   return `
     <div class="screen-body" data-screen="detail">
@@ -399,6 +405,16 @@ function renderCustomerDetailScreen(lang, customer) {
       </div>
 
       <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        ${
+          justPaid
+            ? `<div style="background:var(--primary-light); border:1.5px solid var(--primary); border-radius:var(--radius-sm); padding:12px 14px; display:flex; flex-direction:column; gap:8px;">
+                 <div style="font-size:13px; font-weight:700; color:var(--primary-dark);">${escapeHtml(t(lang, 'receipt_banner_title'))}</div>
+                 <button type="button" class="btn-primary btn-open-receipt" data-payment-id="${escapeHtml(justPaid.id)}" style="font-size:14px;">
+                   ${escapeHtml(t(lang, 'receipt_banner_cta', { nama: customer.name.split(' ')[0] || customer.name }))}
+                 </button>
+               </div>`
+            : ''
+        }
         <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:16px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
             <div>
@@ -502,8 +518,18 @@ function renderCustomerDetailScreen(lang, customer) {
                                  : ''
                              }
                            </div>
-                           <div style="font-weight:700; font-size:14px; color:${amtColor}; flex-shrink:0; margin-left:10px;">
-                             ${sign} ${escapeHtml(rp(entry.amountIdr, { spaced: true }))}
+                           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; margin-left:10px;">
+                             <div style="font-weight:700; font-size:14px; color:${amtColor};">
+                               ${sign} ${escapeHtml(rp(entry.amountIdr, { spaced: true }))}
+                             </div>
+                             ${
+                               !isDebt
+                                 ? `<button type="button" class="btn-open-receipt" data-payment-id="${escapeHtml(entry.id)}"
+                                      style="background:var(--bg2); border:1px solid var(--border); border-radius:8px; font-size:11px; font-weight:600; color:var(--text2); padding:0 10px; min-height:44px;">
+                                      ${escapeHtml(t(lang, 'receipt_row_btn'))}
+                                    </button>`
+                                 : ''
+                             }
                            </div>
                          </div>
                        `;
@@ -897,6 +923,74 @@ function renderShareCardScreen(lang) {
   `;
 }
 
+function renderReceiptScreen(lang, customer) {
+  let model;
+  try {
+    model = buildReceiptModel(appState, { customerId: customer.id, paymentId: uiState.receiptPaymentId });
+  } catch {
+    return renderCustomerDetailScreen(lang, customer);
+  }
+  const firstName = customer.name.split(' ')[0] || customer.name;
+  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, model.shareText);
+  const accent = model.isLunas ? 'var(--primary)' : 'var(--amber)';
+  return `
+    <div class="screen-body" data-screen="receipt">
+      <div class="topbar">
+        <button type="button" class="back-btn" id="btn-back-to-detail" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:15px; color:var(--text);">${escapeHtml(t(lang, 'receipt_title'))}</div>
+          <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'receipt_subtitle'))}</div>
+        </div>
+      </div>
+
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <div style="background:var(--card); border-radius:20px; overflow:hidden; border:1.5px solid var(--border); box-shadow:0 8px 28px rgba(0,0,0,0.12);">
+          <div style="background:${accent}; padding:16px 18px; color:#fff;">
+            <div style="font-size:11px; font-weight:700; letter-spacing:0.6px; opacity:0.85;">${escapeHtml(t(lang, 'receipt_title')).toUpperCase()}</div>
+            <div style="font-family:var(--font-display); font-size:20px; margin-top:2px;">${escapeHtml(model.warungName)}</div>
+          </div>
+          <div style="padding:16px 18px; display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; gap:8px; font-size:13px; color:var(--text2);">
+              <span>${escapeHtml(model.customerName)}</span><span>${escapeHtml(model.dateLabel)}</span>
+            </div>
+            <div>
+              <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'receipt_paid_label'))}</div>
+              <div style="font-family:var(--font-display); font-size:30px; color:var(--primary-dark);">${escapeHtml(model.amountPaidFormatted)}</div>
+              ${model.note ? `<div style="font-size:12px; color:var(--text3);">${escapeHtml(model.note)}</div>` : ''}
+            </div>
+            <div style="background:${model.isLunas ? 'var(--primary-light)' : 'var(--amber-light)'}; border-radius:var(--radius-sm); padding:10px 12px; display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:12px; font-weight:700; color:${model.isLunas ? 'var(--primary-dark)' : 'var(--amber)'};">
+                ${escapeHtml(model.isLunas ? t(lang, 'receipt_lunas_label') : t(lang, 'receipt_remaining_label'))}
+              </span>
+              <span style="font-family:var(--font-display); font-size:18px; color:${model.isLunas ? 'var(--primary-dark)' : 'var(--amber)'};">
+                ${model.isLunas ? '✅' : escapeHtml(model.remainingFormatted)}
+              </span>
+            </div>
+            <div style="font-size:11px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'receipt_honesty_line'))}</div>
+          </div>
+        </div>
+
+        <canvas id="receipt-canvas" width="1080" height="1350" style="display:none;"></canvas>
+
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
+          <button type="button" id="btn-share-receipt" class="btn-primary btn-wa">
+            <span>🧾</span><span>${escapeHtml(t(lang, 'receipt_share_cta'))}</span>
+          </button>
+          <a id="btn-receipt-text-wa" href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer" class="btn-secondary tap-target">
+            💬 ${escapeHtml(t(lang, 'receipt_text_cta', { nama: firstName }))}
+          </a>
+          <button type="button" id="btn-download-receipt" class="btn-secondary">
+            ⬇️ ${escapeHtml(t(lang, 'receipt_download_cta'))}
+          </button>
+          <div style="font-size:12px; color:var(--text3); text-align:center;">${escapeHtml(t(lang, 'receipt_fallback_hint'))}</div>
+          <button type="button" id="btn-back-to-detail-bottom" class="btn-secondary">
+            ${escapeHtml(t(lang, 'receipt_back_btn'))}
+          </button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderSettingsScreen(lang) {
   const s = appState.settings;
   return `
@@ -1209,7 +1303,7 @@ function renderBottomNav(lang) {
         .map((item) => {
           const active =
             uiState.screen === item.id ||
-            (['detail', 'reminder', 'card', 'broadcast'].includes(uiState.screen) && item.id === 'list');
+            (['detail', 'reminder', 'card', 'broadcast', 'receipt'].includes(uiState.screen) && item.id === 'list');
           return `
             <button type="button" class="bottom-nav-btn ${active ? 'active' : ''}" data-nav="${item.id}">
               <span class="bottom-nav-icon" aria-hidden="true">${item.icon}</span>
@@ -1239,6 +1333,8 @@ export function renderApp() {
     screenHtml = renderCustomerDetailScreen(lang, selectedCustomer);
   } else if (uiState.screen === 'reminder' && selectedCustomer) {
     screenHtml = renderReminderScreen(lang, selectedCustomer);
+  } else if (uiState.screen === 'receipt' && selectedCustomer) {
+    screenHtml = renderReceiptScreen(lang, selectedCustomer);
   } else if (uiState.screen === 'card') {
     screenHtml = renderShareCardScreen(lang);
   } else if (uiState.screen === 'broadcast') {
@@ -1273,6 +1369,14 @@ export function renderApp() {
     const canvas = root.querySelector('#share-card-canvas');
     if (canvas) {
       drawShareCardToCanvas(canvas, buildShareCardModel(appState));
+    }
+  }
+  if (uiState.screen === 'receipt' && selectedCustomer) {
+    const canvas = root.querySelector('#receipt-canvas');
+    if (canvas) {
+      try {
+        drawReceiptToCanvas(canvas, buildReceiptModel(appState, { customerId: selectedCustomer.id, paymentId: uiState.receiptPaymentId }));
+      } catch { /* model invalid: screen already fell back to detail */ }
     }
   }
 
@@ -1474,14 +1578,38 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
-  // Reminder screen events
-  const backToDetailBtn = root.querySelector('#btn-back-to-detail');
-  if (backToDetailBtn) {
-    backToDetailBtn.addEventListener('click', () => {
+  // Reminder / receipt screen events
+  root.querySelectorAll('#btn-back-to-detail, #btn-back-to-detail-bottom').forEach((btn) => {
+    btn.addEventListener('click', () => {
       uiState.screen = 'detail';
       renderApp();
     });
-  }
+  });
+
+  // Receipt card: open from the post-payment banner or any payment row
+  root.querySelectorAll('.btn-open-receipt').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      uiState.receiptPaymentId = btn.getAttribute('data-payment-id');
+      uiState.lastPaymentId = null;
+      uiState.screen = 'receipt';
+      renderApp();
+    });
+  });
+
+  const shareReceiptBtn = root.querySelector('#btn-share-receipt');
+  const downloadReceiptBtn = root.querySelector('#btn-download-receipt');
+  const receiptAction = async (forceDownload) => {
+    const canvas = root.querySelector('#receipt-canvas');
+    if (!canvas || !selectedCustomer) return;
+    try {
+      const model = buildReceiptModel(appState, { customerId: selectedCustomer.id, paymentId: uiState.receiptPaymentId });
+      await shareOrDownloadReceipt(canvas, model, { forceDownload });
+    } catch (err) {
+      console.error('Receipt share failed:', err);
+    }
+  };
+  if (shareReceiptBtn) shareReceiptBtn.addEventListener('click', () => receiptAction(false));
+  if (downloadReceiptBtn) downloadReceiptBtn.addEventListener('click', () => receiptAction(true));
 
   if (uiState.screen === 'reminder') {
     root.querySelectorAll('.tone-picker-btn').forEach((btn) => {
@@ -1733,6 +1861,8 @@ function bindEvents(selectedCustomer, lang) {
         date: fd.get('date')
       });
       uiState.activeSheet = null;
+      const newest = appState.payments[appState.payments.length - 1];
+      uiState.lastPaymentId = newest ? newest.id : null;
       showUndoToast(t(lang, 'undo_toast_payment'));
       renderApp();
     });
