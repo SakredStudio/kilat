@@ -1,7 +1,7 @@
 // Kilat Service Worker — Cache-first offline asset shell
 // Cache-first shell: installed phones only pick up a new release when this name changes.
-// BUMP THIS ON EVERY DEPLOY (v2 = 2026-10-24 pre-launch review).
-const CACHE_NAME = 'kilat-shell-v3';
+// BUMP THIS ON EVERY DEPLOY (v3 = language switch; v4 = v2/v3 feature release 2026-10-25).
+const CACHE_NAME = 'kilat-shell-v4';
 
 const PRECACHE_ASSETS = [
   './',
@@ -20,6 +20,14 @@ const PRECACHE_ASSETS = [
   './lib/ledger.js',
   './lib/wa.js',
   './lib/share-card.js',
+  './lib/books.js',
+  './lib/broadcast.js',
+  './lib/canvas-share.js',
+  './lib/receipt-card.js',
+  './lib/photos.js',
+  './lib/stats.js',
+  './lib/qris.js',
+  './lib/cloud.js',
   './fonts/fonts.css',
   './fonts/DMSans-400-latin.woff2',
   './fonts/DMSans-400-latin-ext.woff2',

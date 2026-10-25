@@ -51,8 +51,24 @@
       <li><strong>Cadangan.</strong> Ekspor membuat berkas di perangkat Anda. Di mana Anda menyimpan atau membagikan berkas itu adalah urusan Anda.</li>
     </ul>
 
+    <h2>Foto bon dan gambar QRIS</h2>
+    <ul>
+      <li><strong>Foto bon.</strong> Anda bisa melampirkan satu foto pada tiap catatan utang. Foto diperkecil di HP Anda (maks. 800 px) dan disimpan di penyimpanan browser (<code>IndexedDB</code>) di perangkat ini. Tidak pernah diunggah. Foto ikut dalam berkas cadangan JSON yang Anda ekspor sendiri, dan terhapus bersama <em>Hapus Semua Data</em>.</li>
+      <li><strong>Gambar QRIS.</strong> Anda bisa menyimpan gambar QRIS statis warung Anda (maks. 1000 px) di perangkat ini. Kilat tidak membaca, memindai, atau memproses kode itu. Bila Anda memilih <em>Lampirkan QRIS</em>, gambar dibagikan lewat menu berbagi HP (atau diunduh) supaya Anda bisa mengirimnya di WhatsApp. Pelanggan membayar langsung ke rekening Anda; Kilat tidak tahu dan tidak terlibat dalam pembayaran itu.</li>
+    </ul>
+
+    <h2>Cadangan cloud terenkripsi (Pro+, opsional)</h2>
+    <p>Fitur ini <strong>mati secara bawaan</strong> dan hanya aktif jika Anda membuat brankas sendiri di Pengaturan. Jika aktif:</p>
+    <ul>
+      <li>Seluruh catatan dienkripsi <strong>di HP Anda</strong> dengan kata sandi yang Anda pilih (PBKDF2 200.000 iterasi + AES-GCM 256 bit) sebelum dikirim.</li>
+      <li>Server kami hanya menyimpan data terenkripsi (<em>ciphertext</em>) beserta salt dan IV acak, di bawah kode brankas acak. Server tidak pernah menerima kata sandi, nama pelanggan, nomor telepon, atau jumlah. Kami tidak bisa membuka cadangan Anda. Lupa kata sandi berarti cadangan tidak bisa dipulihkan oleh siapa pun.</li>
+      <li>Tidak ada akun, email, atau nomor HP yang dikaitkan dengan brankas. Kode brankas adalah satu-satunya pengenal.</li>
+      <li>Anda bisa menghapus cadangan di cloud kapan saja dari Pengaturan. Data di HP tidak terpengaruh.</li>
+      <li>Di rilis ini server cadangan belum diaktifkan; aplikasi menampilkan <em>"Belum tersedia"</em>.</li>
+    </ul>
+
     <h2>Uang</h2>
-    <p>Kilat adalah buku catatan. Kilat tidak menerima, menyimpan, mentransfer, atau menagih uang, dan tidak terhubung ke bank, dompet digital, atau QRIS. Pembayaran terjadi di luar aplikasi, antara Anda dan pelanggan.</p>
+    <p>Kilat adalah buku catatan. Kilat tidak menerima, menyimpan, mentransfer, atau menagih uang, dan tidak terhubung ke bank atau dompet digital. Gambar QRIS yang Anda simpan hanyalah gambar yang Anda bagikan sendiri. Pembayaran terjadi di luar aplikasi, antara Anda dan pelanggan atau supplier.</p>
 
     <h2>Tanpa pelacakan</h2>
     <p>Tidak ada analitik, tidak ada SDK iklan, tidak ada cookie, tidak ada font atau skrip pihak ketiga saat berjalan. Aplikasi bekerja sepenuhnya offline setelah pemuatan pertama.</p>
@@ -68,7 +84,9 @@
     <h2>In English</h2>
     <p><strong>What the app stores:</strong> your shop name, owner name and WhatsApp number (if entered); the customers you add (name, phone number, note); credit and payment records (amount, date, note); and your settings. All of it lives in your browser's local storage on this device and is never uploaded.</p>
     <p><strong>What leaves your phone:</strong> only the WhatsApp message you choose to send (the app opens WhatsApp with a pre-written text; nothing is sent until you press Send there), the summary card image you choose to share, and backup files you export.</p>
-    <p><strong>Money:</strong> Kilat is a ledger. It never receives, holds, transfers or collects money and is not connected to any bank, e-wallet or QRIS.</p>
+    <p><strong>Photos and QRIS:</strong> a bon photo per credit entry and your shop's static QRIS image are shrunk on the phone and kept in the browser's IndexedDB on this device, never uploaded. Attaching the QRIS to a reminder only shares the image through the phone's share sheet (or downloads it); the customer pays you directly and Kilat is not involved in that payment.</p>
+    <p><strong>Encrypted cloud backup (Pro+, optional, off by default):</strong> if you create a vault, the whole ledger is encrypted on your phone with your passphrase (PBKDF2 200,000 iterations + AES-GCM 256) before upload. The server only stores ciphertext under a random vault code: no passphrase, no names, no numbers, no account. We cannot open your backup; a lost passphrase cannot be recovered. You can delete the cloud copy at any time. In this release the backup server is not enabled yet and the app shows "Not available yet".</p>
+    <p><strong>Money:</strong> Kilat is a ledger. It never receives, holds, transfers or collects money and is not connected to any bank or e-wallet. A stored QRIS image is just a picture you choose to share.</p>
     <p><strong>No tracking:</strong> no analytics, no ads, no cookies, no third-party scripts.</p>
     <p><strong>Contact:</strong> sakredfamily@gmail.com</p>
   </main>
