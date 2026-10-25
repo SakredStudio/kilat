@@ -24,11 +24,16 @@ import {
   parseBackup,
   exportCsv,
   addDaysIsoDate,
-  logReminder
+  logReminder,
+  addSupplier,
+  addSupplierDebt,
+  addSupplierPayment,
+  deleteSupplier,
+  setSupplierPayPlan
 } from './lib/store.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 import { buildBroadcastQueue, queueProgress, latestReminderByCustomer } from './lib/broadcast.js';
-import { buildReminderMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
+import { buildReminderMessage, buildSupplierMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
 import {
   buildShareCardModel,
   drawShareCardToCanvas,
@@ -65,8 +70,47 @@ let uiState = {
   receiptPaymentId: null, // payment shown on the receipt screen
   photos: {}, // debtId -> dataURL, mirrored from IndexedDB (lib/photos.js)
   pendingPhotoDataUrl: null, // picked in the add-debt sheet, saved with the new debt
-  photoViewerDebtId: null
+  photoViewerDebtId: null,
+  book: 'customer' // 'customer' (piutang) | 'supplier' (hutang)
 };
+
+// Two books, one engine: the active book decides which store functions and arrays the screens use.
+const BOOK_FNS = {
+  customer: { addParty: addCustomer, addDebt, addPayment, deleteParty: deleteCustomer },
+  supplier: { addParty: addSupplier, addDebt: addSupplierDebt, addPayment: addSupplierPayment, deleteParty: deleteSupplier }
+};
+function isSupplierBook() {
+  return uiState.book === 'supplier';
+}
+function bookFns() {
+  return BOOK_FNS[uiState.book] || BOOK_FNS.customer;
+}
+function parties() {
+  return isSupplierBook() ? appState.suppliers : appState.customers;
+}
+function bookDebts() {
+  return isSupplierBook() ? appState.supplierDebts : appState.debts;
+}
+function bookPayments() {
+  return isSupplierBook() ? appState.supplierPayments : appState.payments;
+}
+function bookReminders() {
+  return appState.reminders.filter((r) => r.book === uiState.book);
+}
+function ledgerFor(book = uiState.book) {
+  return computeWarungLedger(appState, new Date(), { book });
+}
+/** i18n key with a supplier variant when the active book is hutang (falls back to the base key). */
+function bk(lang, key) {
+  if (isSupplierBook()) {
+    try {
+      return t(lang, `${key}_supplier`);
+    } catch {
+      /* no supplier variant: use the base key */
+    }
+  }
+  return t(lang, key);
+}
 
 async function removePhotosForDebts(debtIds) {
   for (const id of debtIds) {
@@ -225,7 +269,19 @@ function renderCustomerListScreen(lang, ledger) {
     riskFilter: uiState.riskFilter
   });
 
-  const broadcastCount = buildBroadcastQueue(ledger.customers, appState.reminders).length;
+  const broadcastCount = isSupplierBook() ? 0 : buildBroadcastQueue(ledger.customers, bookReminders()).length;
+  const bookSwitch = `
+    <div role="tablist" aria-label="${escapeHtml(t(lang, 'book_switch_aria'))}" style="display:grid; grid-template-columns:1fr 1fr; gap:4px; background:rgba(0,0,0,0.18); border-radius:12px; padding:4px; margin-bottom:12px;">
+      ${['customer', 'supplier']
+        .map((b) => {
+          const active = uiState.book === b;
+          return `<button type="button" role="tab" aria-selected="${active}" class="book-switch-btn" data-book="${b}"
+            style="min-height:44px; border:none; border-radius:9px; font-size:13px; font-weight:700; background:${active ? '#fff' : 'transparent'}; color:${active ? 'var(--primary-dark)' : 'rgba(255,255,255,0.85)'};">
+            ${escapeHtml(t(lang, b === 'customer' ? 'book_switch_customers' : 'book_switch_suppliers'))}
+          </button>`;
+        })
+        .join('')}
+    </div>`;
 
   const filterChips = [
     { id: 'Semua', label: t(lang, 'filter_all') },
@@ -241,7 +297,7 @@ function renderCustomerListScreen(lang, ledger) {
           <div>
             <div style="font-size:11px; color:rgba(255,255,255,0.75); font-weight:500;">${escapeHtml(w.name)}</div>
             <h1 style="font-family:var(--font-display); font-size:21px; color:#fff; margin-top:2px;">
-              ${escapeHtml(t(lang, 'list_subtitle'))}
+              ${escapeHtml(bk(lang, 'list_subtitle'))}
             </h1>
           </div>
           <div style="display:flex; gap:6px;">
@@ -256,17 +312,19 @@ function renderCustomerListScreen(lang, ledger) {
           </div>
         </div>
 
+        ${bookSwitch}
+
         <div style="background:rgba(0,0,0,0.18); border-radius:12px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
           <div>
-            <div style="font-size:11px; color:rgba(255,255,255,0.75);">${escapeHtml(t(lang, 'list_total_piutang'))}</div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.75);">${escapeHtml(bk(lang, 'list_total_piutang'))}</div>
             <div id="total-piutang-value" style="font-family:var(--font-display); font-size:22px; color:#fff;">
               ${escapeHtml(rp(ledger.totalPiutang, { spaced: true }))}
             </div>
           </div>
           <div style="text-align:right;">
-            <div style="font-size:11px; color:rgba(255,255,255,0.75);">${escapeHtml(t(lang, 'list_need_followup'))}</div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.75);">${escapeHtml(bk(lang, 'list_need_followup'))}</div>
             <div style="font-size:17px; font-weight:700; color:#FCD34D;">
-              ${ledger.needFollowupCount} ${escapeHtml(t(lang, 'list_people_suffix'))}
+              ${isSupplierBook() ? ledger.dueCount : ledger.needFollowupCount} ${escapeHtml(bk(lang, 'list_people_suffix'))}
             </div>
           </div>
         </div>
@@ -309,9 +367,9 @@ function renderCustomerListScreen(lang, ledger) {
         ${
           filtered.length === 0
             ? `<div style="text-align:center; padding:32px 16px; color:var(--text3);">
-                 <p style="font-size:14px; margin-bottom:12px;">${escapeHtml(t(lang, 'empty_customers'))}</p>
+                 <p style="font-size:14px; margin-bottom:12px;">${escapeHtml(bk(lang, 'empty_customers'))}</p>
                  ${
-                   appState.customers.length === 0
+                   !isSupplierBook() && appState.customers.length === 0
                      ? `<button type="button" id="btn-seed-demo-empty" class="btn-secondary">${escapeHtml(t(lang, 'empty_customers_cta'))}</button>`
                      : ''
                  }
@@ -393,7 +451,7 @@ function renderDueTodaySection(lang, ledger) {
 
 function renderCustomerDetailScreen(lang, customer) {
   if (!customer) {
-    return renderCustomerListScreen(lang, computeWarungLedger(appState));
+    return renderCustomerListScreen(lang, ledgerFor());
   }
   const badgeClass = customer.isPaid ? 'risk-Lunas' : `risk-${customer.risk}`;
   const badgeLabel = customer.isPaid ? t(lang, 'risk_paid') : riskLabel(lang, customer.risk);
@@ -403,10 +461,11 @@ function renderCustomerDetailScreen(lang, customer) {
       : customer.risk === 'Sedang'
         ? 'var(--amber)'
         : 'var(--primary-dark)';
-  const lastReminded = latestReminderByCustomer(appState.reminders)[customer.id] || null;
-  const justPaid = uiState.lastPaymentId
+  const lastReminded = latestReminderByCustomer(bookReminders())[customer.id] || null;
+  const justPaid = uiState.lastPaymentId && !isSupplierBook()
     ? appState.payments.find((p) => p.id === uiState.lastPaymentId && p.customerId === customer.id) || null
     : null;
+  const supplierPlan = isSupplierBook() && customer.payPlan ? customer.payPlan : null;
 
   return `
     <div class="screen-body" data-screen="detail">
@@ -440,7 +499,7 @@ function renderCustomerDetailScreen(lang, customer) {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
             <div>
               <div style="font-size:12px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.3px;">
-                ${escapeHtml(t(lang, 'customer_balance_label'))}
+                ${escapeHtml(bk(lang, 'customer_balance_label'))}
               </div>
               <div id="detail-balance-value" style="font-family:var(--font-display); font-size:28px; color:${amountColor}; margin-top:4px;">
                 ${escapeHtml(rp(customer.balance, { spaced: true }))}
@@ -479,23 +538,38 @@ function renderCustomerDetailScreen(lang, customer) {
 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;">
             <button type="button" id="btn-open-add-debt" class="btn-secondary" style="border-color:var(--amber); color:var(--text);">
-              ${escapeHtml(t(lang, 'customer_add_debt_btn'))}
+              ${escapeHtml(bk(lang, 'customer_add_debt_btn'))}
             </button>
             <button type="button" id="btn-open-record-pay" class="btn-primary">
               ${escapeHtml(t(lang, 'customer_record_pay_btn'))}
             </button>
           </div>
 
-          <div style="margin-top:10px;">
-            <button type="button" id="btn-go-reminder" class="btn-primary btn-wa">
-              ${escapeHtml(t(lang, 'customer_send_wa_btn'))}
-            </button>
-          </div>
+          ${
+            isSupplierBook()
+              ? `<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+                   <button type="button" id="btn-open-pay-plan" class="btn-secondary">${escapeHtml(t(lang, 'supplier_remind_me_btn'))}</button>
+                   <button type="button" id="btn-go-reminder" class="btn-primary btn-wa">${escapeHtml(t(lang, 'supplier_notify_btn'))}</button>
+                 </div>
+                 <div style="margin-top:10px; background:var(--bg); border:1px dashed var(--border); border-radius:var(--radius-sm); padding:10px 12px; font-size:13px; color:var(--text2);">
+                   <div style="font-size:11px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:0.3px;">${escapeHtml(t(lang, 'supplier_plan_title'))}</div>
+                   ${
+                     supplierPlan
+                       ? `<div style="margin-top:4px;">${supplierPlan.date ? `📅 <strong>${escapeHtml(formatDateId(supplierPlan.date))}</strong>` : ''} ${escapeHtml(supplierPlan.note || '')}</div>`
+                       : `<div style="margin-top:4px; color:var(--text3);">${escapeHtml(t(lang, 'supplier_plan_none'))}</div>`
+                   }
+                 </div>`
+              : `<div style="margin-top:10px;">
+                   <button type="button" id="btn-go-reminder" class="btn-primary btn-wa">
+                     ${escapeHtml(t(lang, 'customer_send_wa_btn'))}
+                   </button>
+                 </div>`
+          }
           <div style="font-size:12px; color:var(--text3); margin-top:8px; text-align:center;">
             ${escapeHtml(
               lastReminded
-                ? t(lang, 'detail_last_reminded', { waktu: formatDateTimeShort(lastReminded.sentAt) })
-                : t(lang, 'detail_never_reminded')
+                ? bk(lang, 'detail_last_reminded').replace('{waktu}', formatDateTimeShort(lastReminded.sentAt))
+                : bk(lang, 'detail_never_reminded')
             )}
           </div>
         </div>
@@ -513,7 +587,7 @@ function renderCustomerDetailScreen(lang, customer) {
                    ${customer.history
                      .map((entry) => {
                        const isDebt = entry.type === 'debt';
-                       const typeLabel = isDebt ? t(lang, 'entry_type_debt') : t(lang, 'entry_type_payment');
+                       const typeLabel = isDebt ? bk(lang, 'entry_type_debt') : t(lang, 'entry_type_payment');
                        const badgeStyle = isDebt
                          ? 'background:var(--amber-light); color:var(--amber);'
                          : 'background:var(--primary-light); color:var(--primary-dark);';
@@ -556,7 +630,7 @@ function renderCustomerDetailScreen(lang, customer) {
                                  : ''
                              }
                              ${
-                               !isDebt
+                               !isDebt && !isSupplierBook()
                                  ? `<button type="button" class="btn-open-receipt" data-payment-id="${escapeHtml(entry.id)}"
                                       style="background:var(--bg2); border:1px solid var(--border); border-radius:8px; font-size:11px; font-weight:600; color:var(--text2); padding:0 10px; min-height:44px;">
                                       ${escapeHtml(t(lang, 'receipt_row_btn'))}
@@ -574,12 +648,16 @@ function renderCustomerDetailScreen(lang, customer) {
 
         <input id="photo-attach-input" type="file" accept="image/*" capture="environment" style="display:none;" data-debt-id="" />
 
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-          <button type="button" id="btn-open-merge" class="btn-secondary" style="font-size:13px;">
-            ${escapeHtml(t(lang, 'customer_merge_btn'))}
-          </button>
+        <div style="display:grid; grid-template-columns:${isSupplierBook() ? '1fr' : '1fr 1fr'}; gap:10px;">
+          ${
+            isSupplierBook()
+              ? ''
+              : `<button type="button" id="btn-open-merge" class="btn-secondary" style="font-size:13px;">
+                   ${escapeHtml(t(lang, 'customer_merge_btn'))}
+                 </button>`
+          }
           <button type="button" id="btn-delete-customer" class="btn-secondary" style="font-size:13px; color:var(--red); border-color:var(--red);">
-            ${escapeHtml(t(lang, 'customer_delete_btn'))}
+            ${escapeHtml(bk(lang, 'customer_delete_btn'))}
           </button>
         </div>
       </div>
@@ -627,11 +705,18 @@ function renderMergeSheet(lang, customer) {
 
 function renderReminderScreen(lang, customer) {
   if (!customer) {
-    return renderCustomerListScreen(lang, computeWarungLedger(appState));
+    return renderCustomerListScreen(lang, ledgerFor());
   }
   const w = appState.warung;
   const activeTone = uiState.reminderTone || appState.settings.tone || 'sopan';
-  const generatedMsg = composeReminder(customer, activeTone);
+  const generatedMsg = isSupplierBook()
+    ? buildSupplierMessage({
+        nama: customer.name,
+        jumlah: customer.balance,
+        warung: w.name,
+        tanggal: (customer.payPlan && customer.payPlan.date) || customer.nextDueDate || ''
+      })
+    : composeReminder(customer, activeTone);
 
   const currentMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : generatedMsg;
   const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, currentMsg);
@@ -662,7 +747,7 @@ function renderReminderScreen(lang, customer) {
         <button type="button" class="back-btn" id="btn-back-to-detail" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
         <div style="flex:1; min-width:0;">
           <div style="font-weight:700; font-size:15px; color:var(--text);">
-            ${escapeHtml(t(lang, 'reminder_title'))}
+            ${escapeHtml(bk(lang, 'reminder_title'))}
           </div>
           <div style="font-size:12px; color:var(--text3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
             ${escapeHtml(customer.name)} · ${escapeHtml(rp(customer.balance, { spaced: true }))}
@@ -688,12 +773,18 @@ function renderReminderScreen(lang, customer) {
           </div>
         </div>
 
-        <div>
-          <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px;">
-            ${escapeHtml(t(lang, 'reminder_tone_label'))}
-          </div>
-          ${renderTonePicker(lang, activeTone)}
-        </div>
+        ${
+          isSupplierBook()
+            ? `<div style="background:var(--bg2); border-radius:var(--radius-sm); padding:10px 12px; font-size:12px; color:var(--text2); line-height:1.5;">
+                 ${escapeHtml(t(lang, 'supplier_reminder_note'))}
+               </div>`
+            : `<div>
+                 <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.3px;">
+                   ${escapeHtml(t(lang, 'reminder_tone_label'))}
+                 </div>
+                 ${renderTonePicker(lang, activeTone)}
+               </div>`
+        }
 
         ${renderWaBubble(lang, fmtPhone(customer.phone62 || customer.phoneRaw), currentMsg)}
 
@@ -711,9 +802,13 @@ function renderReminderScreen(lang, customer) {
             <span>${uiState.sentFeedback ? '✓' : '💬'}</span>
             <span>${escapeHtml(uiState.sentFeedback ? t(lang, 'reminder_Sent_wa_cta') : t(lang, 'reminder_send_wa_cta', { nama: firstName }))}</span>
           </a>
-          <button type="button" id="btn-show-card" class="btn-secondary">
-            ${escapeHtml(t(lang, 'reminder_share_card_btn'))}
-          </button>
+          ${
+            isSupplierBook()
+              ? ''
+              : `<button type="button" id="btn-show-card" class="btn-secondary">
+                   ${escapeHtml(t(lang, 'reminder_share_card_btn'))}
+                 </button>`
+          }
         </div>
       </div>
     </div>
@@ -1296,12 +1391,12 @@ function renderAddCustomerSheet(lang) {
     <div class="sheet-backdrop" id="sheet-backdrop">
       <form class="sheet-panel" id="form-add-customer">
         <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
-          ${escapeHtml(t(lang, 'sheet_add_customer_title'))}
+          ${escapeHtml(bk(lang, 'sheet_add_customer_title'))}
         </h2>
         <div class="field-group">
-          <label class="field-label" for="add-cust-name">${escapeHtml(t(lang, 'sheet_customer_name_label'))}</label>
+          <label class="field-label" for="add-cust-name">${escapeHtml(bk(lang, 'sheet_customer_name_label'))}</label>
           <input id="add-cust-name" name="name" class="field-input" type="text" required
-            placeholder="${escapeHtml(t(lang, 'sheet_customer_name_placeholder'))}" />
+            placeholder="${escapeHtml(bk(lang, 'sheet_customer_name_placeholder'))}" />
         </div>
         <div class="field-group">
           <label class="field-label" for="add-cust-phone">${escapeHtml(t(lang, 'sheet_customer_phone_label'))}</label>
@@ -1315,7 +1410,7 @@ function renderAddCustomerSheet(lang) {
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div class="field-group">
-            <label class="field-label" for="add-cust-debt">${escapeHtml(t(lang, 'sheet_initial_debt_label'))}</label>
+            <label class="field-label" for="add-cust-debt">${escapeHtml(bk(lang, 'sheet_initial_debt_label'))}</label>
             <input id="add-cust-debt" name="initialDebtIdr" class="field-input" type="number" min="0" step="1" inputmode="numeric"
               placeholder="${escapeHtml(t(lang, 'sheet_initial_debt_placeholder'))}" />
           </div>
@@ -1345,7 +1440,7 @@ function renderAddDebtSheet(lang, customer) {
     <div class="sheet-backdrop" id="sheet-backdrop">
       <form class="sheet-panel" id="form-add-debt">
         <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
-          ${escapeHtml(t(lang, 'sheet_add_debt_title'))} — ${escapeHtml(customer?.name || '')}
+          ${escapeHtml(bk(lang, 'sheet_add_debt_title'))} — ${escapeHtml(customer?.name || '')}
         </h2>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           ${quickAmounts
@@ -1424,6 +1519,33 @@ function renderPhotoViewer(lang) {
           ${escapeHtml(t(lang, 'photo_close_btn'))}
         </button>
       </div>
+    </div>`;
+}
+
+function renderPayPlanSheet(lang, supplier) {
+  const plan = supplier.payPlan || { date: null, note: '' };
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <form class="sheet-panel" id="form-pay-plan">
+        <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
+          ${escapeHtml(t(lang, 'supplier_plan_sheet_title'))} — ${escapeHtml(supplier.name)}
+        </h2>
+        <p style="font-size:13px; color:var(--text2); line-height:1.5;">${escapeHtml(t(lang, 'supplier_plan_sheet_desc'))}</p>
+        <div class="field-group">
+          <label class="field-label" for="plan-date">${escapeHtml(t(lang, 'supplier_plan_date_label'))}</label>
+          <input id="plan-date" name="date" class="field-input" type="date" value="${escapeHtml(plan.date || '')}" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="plan-note">${escapeHtml(t(lang, 'supplier_plan_note_label'))}</label>
+          <input id="plan-note" name="note" class="field-input" type="text" value="${escapeHtml(plan.note || '')}"
+            placeholder="${escapeHtml(t(lang, 'supplier_plan_note_placeholder'))}" />
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">${escapeHtml(t(lang, 'sheet_cancel_btn'))}</button>
+          ${supplier.payPlan ? `<button type="button" id="btn-plan-clear" class="btn-secondary" style="flex:1; color:var(--red); border-color:var(--red);">${escapeHtml(t(lang, 'supplier_plan_clear'))}</button>` : ''}
+          <button type="submit" class="btn-primary" style="flex:1;">${escapeHtml(t(lang, 'sheet_save_btn'))}</button>
+        </div>
+      </form>
     </div>`;
 }
 
@@ -1548,7 +1670,7 @@ export function renderApp() {
   applyTheme();
 
   const lang = appState.settings.lang;
-  const ledger = computeWarungLedger(appState);
+  const ledger = ledgerFor();
   const selectedCustomer = ledger.customers.find((c) => c.id === uiState.selectedCustomerId) || null;
 
   let screenHtml = '';
@@ -1581,6 +1703,8 @@ export function renderApp() {
     sheetHtml = renderRecordPaySheet(lang, selectedCustomer);
   } else if (uiState.activeSheet === 'merge' && selectedCustomer) {
     sheetHtml = renderMergeSheet(lang, selectedCustomer);
+  } else if (uiState.activeSheet === 'payPlan' && selectedCustomer && isSupplierBook()) {
+    sheetHtml = renderPayPlanSheet(lang, selectedCustomer);
   } else if (uiState.activeSheet === 'proGate') {
     sheetHtml = renderProGateSheet(lang);
   }
@@ -1708,6 +1832,49 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
+  // Book switch: Piutang (pelanggan) | Hutang (supplier)
+  root.querySelectorAll('.book-switch-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = btn.getAttribute('data-book') === 'supplier' ? 'supplier' : 'customer';
+      if (next === uiState.book) return;
+      uiState.book = next;
+      uiState.selectedCustomerId = null;
+      uiState.searchQuery = '';
+      uiState.riskFilter = 'Semua';
+      uiState.activeSheet = null;
+      renderApp();
+    });
+  });
+
+  // Supplier "ingatkan saya" plan
+  const openPayPlanBtn = root.querySelector('#btn-open-pay-plan');
+  if (openPayPlanBtn) {
+    openPayPlanBtn.addEventListener('click', () => {
+      uiState.activeSheet = 'payPlan';
+      renderApp();
+    });
+  }
+  const payPlanForm = root.querySelector('#form-pay-plan');
+  if (payPlanForm && selectedCustomer && isSupplierBook()) {
+    payPlanForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(payPlanForm);
+      const date = String(fd.get('date') || '');
+      const note = String(fd.get('note') || '').trim();
+      appState = setSupplierPayPlan(appState, selectedCustomer.id, date || note ? { date: date || null, note } : null);
+      uiState.activeSheet = null;
+      renderApp();
+    });
+    const clearPlanBtn = payPlanForm.querySelector('#btn-plan-clear');
+    if (clearPlanBtn) {
+      clearPlanBtn.addEventListener('click', () => {
+        appState = setSupplierPayPlan(appState, selectedCustomer.id, null);
+        uiState.activeSheet = null;
+        renderApp();
+      });
+    }
+  }
+
   // Statistik screen
   const openStatsBtn = root.querySelector('#btn-open-stats');
   if (openStatsBtn) {
@@ -1778,14 +1945,14 @@ function bindEvents(selectedCustomer, lang) {
   const deleteCustomerBtn = root.querySelector('#btn-delete-customer');
   if (deleteCustomerBtn && selectedCustomer) {
     deleteCustomerBtn.addEventListener('click', () => {
-      if (!window.confirm(t(lang, 'customer_delete_confirm', { nama: selectedCustomer.name }))) return;
-      // Photos of this customer's debts are purged once the 5 s undo window closes
-      uiState.pendingPhotoPurge = appState.debts.filter((d) => d.customerId === selectedCustomer.id).map((d) => d.id);
-      appState = deleteCustomer(appState, selectedCustomer.id);
+      if (!window.confirm(bk(lang, 'customer_delete_confirm').replace('{nama}', selectedCustomer.name))) return;
+      // Photos of this party's debts are purged once the 5 s undo window closes
+      uiState.pendingPhotoPurge = bookDebts().filter((d) => d.customerId === selectedCustomer.id).map((d) => d.id);
+      appState = bookFns().deleteParty(appState, selectedCustomer.id);
       uiState.selectedCustomerId = null;
       uiState.activeSheet = null;
       uiState.screen = 'list';
-      showUndoToast(t(lang, 'undo_toast_customer'));
+      showUndoToast(bk(lang, 'undo_toast_customer'));
       renderApp();
     });
   }
@@ -1958,7 +2125,11 @@ function bindEvents(selectedCustomer, lang) {
     sendWaLinkEl.addEventListener('click', () => {
       if (!uiState.sentFeedback) {
         try {
-          appState = logReminder(appState, { customerId: selectedCustomer.id, tone: uiState.reminderTone || 'sopan' });
+          appState = logReminder(appState, {
+            customerId: selectedCustomer.id,
+            tone: isSupplierBook() ? 'sopan' : uiState.reminderTone || 'sopan',
+            book: uiState.book
+          });
         } catch { /* ignore */ }
       }
       uiState.sentFeedback = true;
@@ -2202,7 +2373,7 @@ function bindEvents(selectedCustomer, lang) {
     addDebtForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const fd = new FormData(addDebtForm);
-      appState = addDebt(appState, {
+      appState = bookFns().addDebt(appState, {
         customerId: selectedCustomer.id,
         amountIdr: fd.get('amountIdr'),
         note: fd.get('note'),
@@ -2210,14 +2381,15 @@ function bindEvents(selectedCustomer, lang) {
         dueDate: String(fd.get('dueDate') || '') || null
       });
       uiState.activeSheet = null;
-      const newestDebt = appState.debts[appState.debts.length - 1];
+      const allDebts = bookDebts();
+      const newestDebt = allDebts[allDebts.length - 1];
       if (uiState.pendingPhotoDataUrl && newestDebt) {
         const dataUrl = uiState.pendingPhotoDataUrl;
         uiState.photos[newestDebt.id] = dataUrl;
         putPhoto(newestDebt.id, dataUrl).catch((err) => console.error('Photo save failed:', err));
       }
       uiState.pendingPhotoDataUrl = null;
-      showUndoToast(t(lang, 'undo_toast_debt'));
+      showUndoToast(bk(lang, 'undo_toast_debt'));
       renderApp();
     });
   }
@@ -2228,14 +2400,14 @@ function bindEvents(selectedCustomer, lang) {
     recordPayForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const fd = new FormData(recordPayForm);
-      appState = addPayment(appState, {
+      appState = bookFns().addPayment(appState, {
         customerId: selectedCustomer.id,
         amountIdr: fd.get('amountIdr'),
         note: fd.get('note'),
         date: fd.get('date')
       });
       uiState.activeSheet = null;
-      const newest = appState.payments[appState.payments.length - 1];
+      const newest = isSupplierBook() ? null : appState.payments[appState.payments.length - 1];
       uiState.lastPaymentId = newest ? newest.id : null;
       showUndoToast(t(lang, 'undo_toast_payment'));
       renderApp();
@@ -2272,7 +2444,7 @@ function bindEvents(selectedCustomer, lang) {
   const addCustBtn = root.querySelector('#btn-open-add-customer');
   if (addCustBtn) {
     addCustBtn.addEventListener('click', () => {
-      if (!canAddCustomer(appState)) {
+      if (!isSupplierBook() && !canAddCustomer(appState)) {
         uiState.activeSheet = 'proGate';
       } else {
         uiState.activeSheet = 'addCustomer';
@@ -2345,7 +2517,7 @@ function bindEvents(selectedCustomer, lang) {
       const fd = new FormData(addCustForm);
 
       // Duplicate-phone detection: warn once, offer to open the existing customer, or save anyway
-      const dup = findCustomerByPhone(appState, fd.get('phone'));
+      const dup = findCustomerByPhone(appState, fd.get('phone'), { book: uiState.book });
       if (dup && addCustForm.dataset.dupAck !== dup.id) {
         let warn = addCustForm.querySelector('#dup-phone-warning');
         if (!warn) {
@@ -2375,7 +2547,7 @@ function bindEvents(selectedCustomer, lang) {
       }
 
       try {
-        appState = addCustomer(appState, {
+        appState = bookFns().addParty(appState, {
           name: fd.get('name'),
           phone: fd.get('phone'),
           note: fd.get('note'),
