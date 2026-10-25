@@ -1746,7 +1746,7 @@ function renderBookSwitcherSheet(lang) {
                </div>
                ${appState.settings.isPro ? '' : `<button type="button" id="btn-books-pro-gate" class="btn-secondary">⚡ ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`}`
         }
-        <button type="button" id="btn-cancel-sheet" class="btn-secondary">${escapeHtml(t(lang, 'pro_gate_close_btn'))}</button>
+        <button type="button" id="btn-cancel-sheet" class="btn-secondary">${escapeHtml(t(lang, 'btn_close'))}</button>
       </div>
     </div>`;
 }
@@ -1889,7 +1889,7 @@ function renderProGateSheet(lang) {
                 : `<div class="btn-secondary" aria-disabled="true" style="opacity:0.7; cursor:default;">⚡ ${escapeHtml(t(lang, 'pro_gate_coming_soon'))}</div>`
           }
           <button type="button" id="btn-cancel-sheet" class="${appState.settings.isPro || uiState.billingAvailable ? 'btn-secondary' : 'btn-primary'}">
-            ${escapeHtml(t(lang, 'pro_gate_close_btn'))}
+            ${escapeHtml(t(lang, appState.settings.isPro ? 'btn_close' : 'pro_gate_close_btn'))}
           </button>
         </div>
       </div>

@@ -329,5 +329,6 @@
   "cloud_backup_done": "Cloud backup saved.",
   "cloud_restore_done": "Data restored from the cloud.",
   "cloud_restore_confirm": "Replace all data on this phone with the cloud backup?",
-  "cloud_prompt_passphrase": "Enter the vault passphrase:"
+  "cloud_prompt_passphrase": "Enter the vault passphrase:",
+  "btn_close": "Close"
 }

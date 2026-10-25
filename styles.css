@@ -480,3 +480,21 @@ button {
   font-size: 13px;
   min-height: 44px;
 }
+
+/* Bottom nav pinned on every screen (long screens like Settings used to push it off-screen). */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 430px;
+  z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+#app {
+  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+}
+.undo-toast {
+  bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+}

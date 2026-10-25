@@ -329,5 +329,6 @@
   "cloud_backup_done": "Cadangan cloud tersimpan.",
   "cloud_restore_done": "Data dipulihkan dari cloud.",
   "cloud_restore_confirm": "Ganti semua data di HP ini dengan cadangan cloud?",
-  "cloud_prompt_passphrase": "Masukkan kata sandi brankas:"
+  "cloud_prompt_passphrase": "Masukkan kata sandi brankas:",
+  "btn_close": "Tutup"
 }
