@@ -16,6 +16,9 @@ import {
   undoLastAction,
   getUndoMeta,
   clearUndo,
+  deleteCustomer,
+  mergeCustomers,
+  findCustomerByPhone,
   seedDemoData,
   exportBackupJson,
   importBackupJson,
@@ -478,7 +481,54 @@ function renderCustomerDetailScreen(lang, customer) {
                  </div>`
           }
         </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <button type="button" id="btn-open-merge" class="btn-secondary" style="font-size:13px;">
+            ${escapeHtml(t(lang, 'customer_merge_btn'))}
+          </button>
+          <button type="button" id="btn-delete-customer" class="btn-secondary" style="font-size:13px; color:var(--red); border-color:var(--red);">
+            ${escapeHtml(t(lang, 'customer_delete_btn'))}
+          </button>
+        </div>
       </div>
+    </div>
+  `;
+}
+
+function renderMergeSheet(lang, customer) {
+  const others = appState.customers.filter((c) => c.id !== customer.id);
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <form class="sheet-panel" id="form-merge-customer">
+        <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">
+          ${escapeHtml(t(lang, 'sheet_merge_title'))}
+        </h2>
+        <p style="font-size:13px; color:var(--text2); line-height:1.5;">
+          ${escapeHtml(t(lang, 'sheet_merge_desc', { nama: customer.name }))}
+        </p>
+        ${
+          others.length === 0
+            ? `<p style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'sheet_merge_none'))}</p>`
+            : `<div class="field-group">
+                 <label class="field-label" for="merge-target">${escapeHtml(t(lang, 'sheet_merge_target_label'))}</label>
+                 <select id="merge-target" name="targetId" class="field-input" required>
+                   ${others
+                     .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} · ${escapeHtml(fmtPhone(c.phone62 || c.phoneRaw))}</option>`)
+                     .join('')}
+                 </select>
+               </div>`
+        }
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">
+            ${escapeHtml(t(lang, 'sheet_cancel_btn'))}
+          </button>
+          ${
+            others.length === 0
+              ? ''
+              : `<button type="submit" class="btn-primary" style="flex:1;">${escapeHtml(t(lang, 'sheet_merge_confirm_btn'))}</button>`
+          }
+        </div>
+      </form>
     </div>
   `;
 }
@@ -1095,6 +1145,8 @@ export function renderApp() {
     sheetHtml = renderAddDebtSheet(lang, selectedCustomer);
   } else if (uiState.activeSheet === 'recordPay' && selectedCustomer) {
     sheetHtml = renderRecordPaySheet(lang, selectedCustomer);
+  } else if (uiState.activeSheet === 'merge' && selectedCustomer) {
+    sheetHtml = renderMergeSheet(lang, selectedCustomer);
   } else if (uiState.activeSheet === 'proGate') {
     sheetHtml = renderProGateSheet(lang);
   }
@@ -1209,6 +1261,44 @@ function bindEvents(selectedCustomer, lang) {
   if (openRecordPayBtn) {
     openRecordPayBtn.addEventListener('click', () => {
       uiState.activeSheet = 'recordPay';
+      renderApp();
+    });
+  }
+
+  // Per-customer delete: confirm, then 5-second undo via the store snapshot
+  const deleteCustomerBtn = root.querySelector('#btn-delete-customer');
+  if (deleteCustomerBtn && selectedCustomer) {
+    deleteCustomerBtn.addEventListener('click', () => {
+      if (!window.confirm(t(lang, 'customer_delete_confirm', { nama: selectedCustomer.name }))) return;
+      appState = deleteCustomer(appState, selectedCustomer.id);
+      uiState.selectedCustomerId = null;
+      uiState.activeSheet = null;
+      uiState.screen = 'list';
+      showUndoToast(t(lang, 'undo_toast_customer'));
+      renderApp();
+    });
+  }
+
+  const openMergeBtn = root.querySelector('#btn-open-merge');
+  if (openMergeBtn) {
+    openMergeBtn.addEventListener('click', () => {
+      uiState.activeSheet = 'merge';
+      renderApp();
+    });
+  }
+
+  const mergeForm = root.querySelector('#form-merge-customer');
+  if (mergeForm && selectedCustomer) {
+    mergeForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const targetId = String(new FormData(mergeForm).get('targetId') || '');
+      const target = appState.customers.find((c) => c.id === targetId);
+      if (!target) return;
+      if (!window.confirm(t(lang, 'sheet_merge_confirm', { sumber: selectedCustomer.name, tujuan: target.name }))) return;
+      appState = mergeCustomers(appState, selectedCustomer.id, targetId);
+      uiState.selectedCustomerId = targetId;
+      uiState.activeSheet = null;
+      showUndoToast(t(lang, 'undo_toast_merge'));
       renderApp();
     });
   }
@@ -1578,6 +1668,37 @@ function bindEvents(selectedCustomer, lang) {
     addCustForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const fd = new FormData(addCustForm);
+
+      // Duplicate-phone detection: warn once, offer to open the existing customer, or save anyway
+      const dup = findCustomerByPhone(appState, fd.get('phone'));
+      if (dup && addCustForm.dataset.dupAck !== dup.id) {
+        let warn = addCustForm.querySelector('#dup-phone-warning');
+        if (!warn) {
+          warn = document.createElement('div');
+          warn.id = 'dup-phone-warning';
+          warn.setAttribute('role', 'alert');
+          warn.style.cssText = 'background:var(--amber-light); border:1.5px solid var(--amber); border-radius:var(--radius-sm); padding:12px 14px; display:flex; flex-direction:column; gap:8px;';
+          addCustForm.insertBefore(warn, addCustForm.lastElementChild);
+        }
+        warn.innerHTML = `
+          <div style="font-size:13px; color:var(--text); line-height:1.5;">${escapeHtml(t(lang, 'dup_phone_warning', { nama: dup.name }))}</div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" id="btn-dup-open" class="btn-secondary" style="flex:1; font-size:13px;">${escapeHtml(t(lang, 'dup_phone_open_btn'))}</button>
+            <button type="button" id="btn-dup-save-anyway" class="btn-secondary" style="flex:1; font-size:13px;">${escapeHtml(t(lang, 'dup_phone_save_anyway_btn'))}</button>
+          </div>`;
+        warn.querySelector('#btn-dup-open').addEventListener('click', () => {
+          uiState.selectedCustomerId = dup.id;
+          uiState.screen = 'detail';
+          uiState.activeSheet = null;
+          renderApp();
+        });
+        warn.querySelector('#btn-dup-save-anyway').addEventListener('click', () => {
+          addCustForm.dataset.dupAck = dup.id;
+          addCustForm.requestSubmit();
+        });
+        return;
+      }
+
       try {
         appState = addCustomer(appState, {
           name: fd.get('name'),

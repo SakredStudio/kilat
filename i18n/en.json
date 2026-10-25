@@ -148,5 +148,18 @@
   "due_upcoming_label": "Due {tanggal}",
   "sheet_due_date_label": "Due Date (optional)",
   "sheet_due_date_hint": "Defaults to {days} days after the credit date. Clear it for no due date.",
-  "ledger_due_prefix": "Due:"
+  "ledger_due_prefix": "Due:",
+  "customer_delete_btn": "🗑️ Delete Customer",
+  "customer_delete_confirm": "Delete {nama} with all their credit and payment records? You will have 5 seconds to undo.",
+  "customer_merge_btn": "🔀 Merge",
+  "sheet_merge_title": "Merge Customers",
+  "sheet_merge_desc": "All credit and payment records of {nama} move to the target customer. Both WhatsApp numbers are kept in the note.",
+  "sheet_merge_target_label": "Merge into",
+  "sheet_merge_none": "There is no other customer to merge into yet.",
+  "sheet_merge_confirm_btn": "Merge",
+  "sheet_merge_confirm": "Merge {sumber} into {tujuan}? {sumber} will be removed from the list.",
+  "undo_toast_merge": "Customers merged",
+  "dup_phone_warning": "This number is already registered to {nama}. Open that customer, or save as a new one anyway?",
+  "dup_phone_open_btn": "Open existing",
+  "dup_phone_save_anyway_btn": "Save anyway"
 }

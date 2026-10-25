@@ -148,5 +148,18 @@
   "due_upcoming_label": "Jatuh tempo {tanggal}",
   "sheet_due_date_label": "Jatuh Tempo (opsional)",
   "sheet_due_date_hint": "Otomatis {days} hari dari tanggal utang. Kosongkan jika tanpa jatuh tempo.",
-  "ledger_due_prefix": "Jatuh tempo:"
+  "ledger_due_prefix": "Jatuh tempo:",
+  "customer_delete_btn": "🗑️ Hapus Pelanggan",
+  "customer_delete_confirm": "Hapus {nama} beserta semua catatan utang dan bayarnya? Anda punya 5 detik untuk mengurungkan.",
+  "customer_merge_btn": "🔀 Gabungkan",
+  "sheet_merge_title": "Gabungkan Pelanggan",
+  "sheet_merge_desc": "Semua catatan utang dan bayar {nama} akan dipindahkan ke pelanggan tujuan. Kedua nomor WhatsApp disimpan di catatan.",
+  "sheet_merge_target_label": "Gabungkan ke",
+  "sheet_merge_none": "Belum ada pelanggan lain untuk digabungkan.",
+  "sheet_merge_confirm_btn": "Gabungkan",
+  "sheet_merge_confirm": "Gabungkan {sumber} ke {tujuan}? {sumber} akan dihapus dari daftar.",
+  "undo_toast_merge": "Pelanggan digabungkan",
+  "dup_phone_warning": "Nomor ini sudah terdaftar atas nama {nama}. Buka pelanggan itu, atau tetap simpan sebagai pelanggan baru?",
+  "dup_phone_open_btn": "Buka yang ada",
+  "dup_phone_save_anyway_btn": "Tetap simpan"
 }
