@@ -1,0 +1,5 @@
+Chanda Collector © 2026 Sakred Studio. All rights reserved.
+
+The app source in this repository is proprietary. Third-party components keep their own licences:
+- fonts/ (Mukta): SIL Open Font License 1.1, see fonts/OFL.txt
+- vendor/qrcode.js (qrcode-generator): MIT, see vendor/LICENSE

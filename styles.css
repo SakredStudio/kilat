@@ -92,7 +92,9 @@ button,
 input,
 select,
 textarea,
-a.tap-target {
+.tap-target,
+.btn-primary,
+.btn-secondary {
   font-family: var(--font);
   min-height: 44px;
 }

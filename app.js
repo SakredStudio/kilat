@@ -1,10 +1,12 @@
 // Kilat — Main Application Controller (P0–P5)
 import { registerTranslations, t } from './lib/i18n.js';
+import { isPlayBillingAvailable, getProPrice, hasProPurchase, buyPro, PRO_PRICE_FALLBACK } from './lib/billing.js';
 import { rp, avatarInitials, formatDateId } from './lib/format.js';
 import { formatLocalPhone as fmtPhone } from './lib/phone.js';
 import {
   loadState,
   saveState,
+  createInitialState,
   updateWarung,
   updateSettings,
   canAddCustomer,
@@ -39,7 +41,11 @@ let uiState = {
   reminderTone: 'sopan',
   customMessage: '',
   messageEdited: false,
-  sentFeedback: false
+  sentFeedback: false,
+  billingAvailable: false,
+  billingBusy: false,
+  billingNotice: '',
+  proPrice: PRO_PRICE_FALLBACK
 };
 
 function escapeHtml(str) {
@@ -224,6 +230,7 @@ function renderCustomerListScreen(lang, ledger) {
         <div style="display:flex; align-items:center; gap:8px; background:var(--bg); border-radius:10px; padding:0 12px; border:1.5px solid var(--border);">
           <span aria-hidden="true" style="font-size:15px;">🔍</span>
           <input id="customer-search-input" type="search"
+            aria-label="${escapeHtml(t(lang, 'search_aria_label'))}"
             placeholder="${escapeHtml(t(lang, 'list_search_placeholder'))}"
             value="${escapeHtml(uiState.searchQuery)}"
             style="border:none; background:none; outline:none; font-size:14px; color:var(--text); width:100%; min-height:44px;" />
@@ -318,7 +325,7 @@ function renderCustomerDetailScreen(lang, customer) {
   return `
     <div class="screen-body" data-screen="detail">
       <div class="topbar">
-        <button type="button" class="back-btn" id="btn-back-to-list" aria-label="Kembali">←</button>
+        <button type="button" class="back-btn" id="btn-back-to-list" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
         <div style="flex:1; min-width:0;">
           <div style="font-weight:700; font-size:16px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
             ${escapeHtml(customer.name)}
@@ -478,7 +485,7 @@ function renderReminderScreen(lang, customer) {
   return `
     <div class="screen-body" data-screen="reminder">
       <div class="topbar">
-        <button type="button" class="back-btn" id="btn-back-to-detail" aria-label="Kembali">←</button>
+        <button type="button" class="back-btn" id="btn-back-to-detail" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
         <div style="flex:1; min-width:0;">
           <div style="font-weight:700; font-size:15px; color:var(--text);">
             ${escapeHtml(t(lang, 'reminder_title'))}
@@ -584,7 +591,7 @@ function renderShareCardScreen(lang) {
   return `
     <div class="screen-body" data-screen="card">
       <div class="topbar">
-        <button type="button" class="back-btn" id="btn-back-from-card" aria-label="Kembali">←</button>
+        <button type="button" class="back-btn" id="btn-back-from-card" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
         <div style="flex:1; min-width:0;">
           <div style="font-weight:700; font-size:15px; color:var(--text);">
             ${escapeHtml(t(lang, 'card_title'))}
@@ -708,8 +715,8 @@ function renderSettingsScreen(lang) {
           </div>
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:14px; font-weight:600; color:var(--text);">${escapeHtml(t(lang, 'settings_dark_mode'))}</span>
-            <button type="button" id="btn-toggle-dark" class="btn-secondary" style="width:auto; min-width:96px;">
-              ${s.darkMode ? '🌙 Aktif' : '☀️ Terang'}
+            <button type="button" id="btn-toggle-dark" class="btn-secondary" style="width:auto; min-width:96px;" aria-pressed="${s.darkMode ? 'true' : 'false'}">
+              ${escapeHtml(s.darkMode ? t(lang, 'settings_dark_on') : t(lang, 'settings_dark_off'))}
             </button>
           </div>
         </div>
@@ -722,9 +729,14 @@ function renderSettingsScreen(lang) {
           <div style="font-size:13px; color:var(--text);">
             ${escapeHtml(s.isPro ? t(lang, 'settings_pro_status_active') : t(lang, 'settings_pro_status_free'))}
           </div>
-          <button type="button" id="btn-toggle-pro-mode" class="btn-secondary">
-            ${escapeHtml(t(lang, 'settings_pro_toggle'))}: <strong>${s.isPro ? 'ON' : 'OFF'}</strong>
-          </button>
+          ${
+            s.isPro
+              ? ''
+              : `<div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, uiState.billingAvailable ? 'pro_gate_desc_buy' : 'pro_gate_desc'))}</div>
+                 <button type="button" id="btn-open-pro-gate" class="btn-primary">⚡ ${escapeHtml(
+                   uiState.billingAvailable ? t(lang, 'pro_buy_btn', { price: uiState.proPrice }) : t(lang, 'pro_gate_coming_soon')
+                 )}</button>`
+          }
         </div>
 
         <!-- Demo Data Loader -->
@@ -761,11 +773,22 @@ function renderSettingsScreen(lang) {
           </button>
         </div>
 
+        <!-- Wipe All Data -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_wipe_title'))}
+          </div>
+          <p style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_wipe_hint'))}</p>
+          <button type="button" id="btn-wipe-all" class="btn-secondary" style="color:var(--red); border-color:var(--red);">
+            ${escapeHtml(t(lang, 'settings_wipe_btn'))}
+          </button>
+        </div>
+
         <!-- Privacy Footer -->
         <div style="padding:12px; text-align:center; font-size:12px; color:var(--text3); line-height:1.5;">
           <p>${escapeHtml(t(lang, 'privacy_notice'))}</p>
           <a href="./privacy.html" class="tap-target" style="display:inline-flex; align-items:center; justify-content:center; color:var(--primary-dark); font-weight:600; margin-top:4px; text-decoration:underline;">
-            Kebijakan Privasi
+            ${escapeHtml(t(lang, 'settings_privacy_link'))}
           </a>
         </div>
       </div>
@@ -798,7 +821,7 @@ function renderAddCustomerSheet(lang) {
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div class="field-group">
             <label class="field-label" for="add-cust-debt">${escapeHtml(t(lang, 'sheet_initial_debt_label'))}</label>
-            <input id="add-cust-debt" name="initialDebtIdr" class="field-input" type="number" min="0" step="1000"
+            <input id="add-cust-debt" name="initialDebtIdr" class="field-input" type="number" min="0" step="1" inputmode="numeric"
               placeholder="${escapeHtml(t(lang, 'sheet_initial_debt_placeholder'))}" />
           </div>
           <div class="field-group">
@@ -841,7 +864,7 @@ function renderAddDebtSheet(lang, customer) {
         </div>
         <div class="field-group">
           <label class="field-label" for="debt-amount">${escapeHtml(t(lang, 'sheet_amount_label'))}</label>
-          <input id="debt-amount" name="amountIdr" class="field-input" type="number" min="100" step="500" required
+          <input id="debt-amount" name="amountIdr" class="field-input" type="number" min="1" step="1" inputmode="numeric" required
             placeholder="${escapeHtml(t(lang, 'sheet_amount_placeholder'))}" />
         </div>
         <div class="field-group">
@@ -887,7 +910,7 @@ function renderRecordPaySheet(lang, customer) {
         </div>
         <div class="field-group">
           <label class="field-label" for="pay-amount">${escapeHtml(t(lang, 'sheet_amount_label'))}</label>
-          <input id="pay-amount" name="amountIdr" class="field-input" type="number" min="100" step="500" required
+          <input id="pay-amount" name="amountIdr" class="field-input" type="number" min="1" step="1" inputmode="numeric" required
             value="${currentBalance > 0 ? currentBalance : ''}"
             placeholder="${escapeHtml(t(lang, 'sheet_amount_placeholder'))}" />
         </div>
@@ -919,16 +942,22 @@ function renderProGateSheet(lang) {
       <div class="sheet-panel">
         <div style="font-size:28px;">⚡</div>
         <h2 style="font-family:var(--font-display); font-size:21px; color:var(--text);">
-          ${escapeHtml(t(lang, 'pro_gate_title'))}
+          ${escapeHtml(t(lang, uiState.billingAvailable ? 'pro_gate_title_buy' : 'pro_gate_title'))}
         </h2>
         <p style="font-size:14px; color:var(--text2); line-height:1.55;">
-          ${escapeHtml(t(lang, 'pro_gate_desc'))}
+          ${escapeHtml(t(lang, uiState.billingAvailable ? 'pro_gate_desc_buy' : 'pro_gate_desc'))}
         </p>
+        ${uiState.billingNotice ? `<p style="font-size:14px; font-weight:700; color:var(--text);">${escapeHtml(uiState.billingNotice)}</p>` : ''}
         <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
-          <button type="button" id="btn-unlock-pro" class="btn-primary">
-            ${escapeHtml(t(lang, 'pro_gate_unlock_btn'))}
-          </button>
-          <button type="button" id="btn-cancel-sheet" class="btn-secondary">
+          ${
+            appState.settings.isPro
+              ? ''
+              : uiState.billingAvailable
+                ? `<button type="button" id="btn-buy-pro" class="btn-primary" ${uiState.billingBusy ? 'disabled' : ''}>⚡ ${escapeHtml(t(lang, 'pro_buy_btn', { price: uiState.proPrice }))}</button>
+                   <button type="button" id="btn-restore-pro" class="btn-secondary" ${uiState.billingBusy ? 'disabled' : ''}>${escapeHtml(t(lang, 'pro_restore_btn'))}</button>`
+                : `<div class="btn-secondary" aria-disabled="true" style="opacity:0.7; cursor:default;">⚡ ${escapeHtml(t(lang, 'pro_gate_coming_soon'))}</div>`
+          }
+          <button type="button" id="btn-cancel-sheet" class="${appState.settings.isPro || uiState.billingAvailable ? 'btn-secondary' : 'btn-primary'}">
             ${escapeHtml(t(lang, 'pro_gate_close_btn'))}
           </button>
         </div>
@@ -1240,17 +1269,14 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
-  const toggleProBtn = root.querySelector('#btn-toggle-pro-mode');
-  if (toggleProBtn) {
-    toggleProBtn.addEventListener('click', () => {
-      appState = updateSettings(appState, { isPro: !appState.settings.isPro });
-      renderApp();
-    });
-  }
+  // Demo data replaces every customer/debt/payment, so ask first when real data exists
+  const confirmDemoLoad = () =>
+    appState.customers.length === 0 || window.confirm(t(lang, 'settings_demo_confirm'));
 
   const loadDemo6Btn = root.querySelector('#btn-load-demo-6');
   if (loadDemo6Btn) {
     loadDemo6Btn.addEventListener('click', () => {
+      if (!confirmDemoLoad()) return;
       appState = seedDemoData(appState, globalThis.localStorage, { count: 6 });
       uiState.screen = 'list';
       renderApp();
@@ -1260,8 +1286,25 @@ function bindEvents(selectedCustomer, lang) {
   const loadDemo12Btn = root.querySelector('#btn-load-demo-12');
   if (loadDemo12Btn) {
     loadDemo12Btn.addEventListener('click', () => {
+      if (!confirmDemoLoad()) return;
       appState = seedDemoData(appState, globalThis.localStorage, { count: 12 });
       uiState.screen = 'list';
+      renderApp();
+    });
+  }
+
+  const wipeAllBtn = root.querySelector('#btn-wipe-all');
+  if (wipeAllBtn) {
+    wipeAllBtn.addEventListener('click', () => {
+      if (!window.confirm(t(lang, 'settings_wipe_confirm'))) return;
+      if (undoTimer) clearTimeout(undoTimer);
+      clearUndo();
+      uiState.toastMessage = null;
+      uiState.selectedCustomerId = null;
+      uiState.searchQuery = '';
+      uiState.riskFilter = 'Semua';
+      appState = saveState(createInitialState());
+      uiState.screen = 'setup';
       renderApp();
     });
   }
@@ -1279,13 +1322,20 @@ function bindEvents(selectedCustomer, lang) {
     importJsonInput.addEventListener('change', async (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
+      if (appState.customers.length > 0 && !window.confirm(t(lang, 'settings_import_confirm'))) {
+        e.target.value = '';
+        return;
+      }
       try {
         const text = await file.text();
         appState = importBackupJson(text);
+        uiState.selectedCustomerId = null;
         uiState.screen = 'list';
         renderApp();
       } catch (err) {
         console.error('Import JSON failed:', err);
+        window.alert(t(lang, 'settings_import_failed'));
+        e.target.value = '';
       }
     });
   }
@@ -1407,6 +1457,52 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
+  const openProGateBtn = root.querySelector('#btn-open-pro-gate');
+  if (openProGateBtn) {
+    openProGateBtn.addEventListener('click', () => {
+      uiState.billingNotice = '';
+      uiState.activeSheet = 'proGate';
+      renderApp();
+    });
+  }
+
+  const buyProBtn = root.querySelector('#btn-buy-pro');
+  if (buyProBtn) {
+    buyProBtn.addEventListener('click', async () => {
+      if (uiState.billingBusy) return;
+      uiState.billingBusy = true;
+      uiState.billingNotice = '';
+      renderApp();
+      try {
+        await buyPro();
+        appState = updateSettings(appState, { isPro: true });
+        uiState.billingNotice = t(lang, 'pro_active');
+      } catch (err) {
+        uiState.billingNotice = t(lang, err && err.code === 'cancelled' ? 'purchase_cancelled' : 'purchase_failed');
+      }
+      uiState.billingBusy = false;
+      renderApp();
+    });
+  }
+
+  const restoreProBtn = root.querySelector('#btn-restore-pro');
+  if (restoreProBtn) {
+    restoreProBtn.addEventListener('click', async () => {
+      if (uiState.billingBusy) return;
+      uiState.billingBusy = true;
+      renderApp();
+      const owned = await hasProPurchase();
+      if (owned) {
+        appState = updateSettings(appState, { isPro: true });
+        uiState.billingNotice = t(lang, 'pro_active');
+      } else {
+        uiState.billingNotice = t(lang, 'no_purchase_found');
+      }
+      uiState.billingBusy = false;
+      renderApp();
+    });
+  }
+
   // Add customer submit
   const addCustForm = root.querySelector('#form-add-customer');
   if (addCustForm) {
@@ -1432,28 +1528,29 @@ function bindEvents(selectedCustomer, lang) {
     });
   }
 
-  // Unlock Pro button
-  const unlockProBtn = root.querySelector('#btn-unlock-pro');
-  if (unlockProBtn) {
-    unlockProBtn.addEventListener('click', () => {
-      appState = updateSettings(appState, { isPro: true });
-      uiState.activeSheet = null;
-      renderApp();
-    });
-  }
 }
 
 export async function initApp() {
   await loadDictionaries();
   appState = loadState();
-  if (appState.customers.length === 0 && !appState.settings.hasCompletedSetup) {
-    appState = seedDemoData(appState, globalThis.localStorage, { count: 6 });
-    uiState.screen = 'setup';
-  } else {
-    uiState.screen = appState.settings.hasCompletedSetup ? 'list' : 'setup';
-  }
+  // First run: show setup with an empty ledger. Demo data is opt-in (empty-list CTA / Settings),
+  // never auto-seeded, so a real warung never starts with fake customers it cannot remove.
+  uiState.screen = appState.settings.hasCompletedSetup ? 'list' : 'setup';
   saveState(appState);
   renderApp();
+
+  // Play Billing: only inside the Play-installed app. Restores Pro on reinstall / new phone.
+  try {
+    uiState.billingAvailable = await isPlayBillingAvailable();
+    if (uiState.billingAvailable) {
+      const [price, owned] = await Promise.all([getProPrice(), hasProPurchase()]);
+      uiState.proPrice = price;
+      if (owned && !appState.settings.isPro) appState = updateSettings(appState, { isPro: true });
+      renderApp();
+    }
+  } catch {
+    /* billing is optional */
+  }
 
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});

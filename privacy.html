@@ -3,19 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0D9488">
   <title>Kebijakan Privasi — Kilat</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./fonts/fonts.css">
+  <style>
+    :root { --primary: #0D9488; --primary-dark: #0F766E; --bg: #F9F7F3; --text: #1C1917; --text2: #57534E; --border: #E7E2D8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 16px; line-height: 1.55; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; font-size: 26px; margin: 0 0 4px; }
+    h2 { font-size: 19px; margin: 28px 0 6px; color: var(--primary-dark); }
+    p, li { color: var(--text); margin: 6px 0; }
+    .meta { color: var(--text2); font-size: 14px; margin-bottom: 20px; }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; margin: 14px 0; }
+    a { color: var(--primary-dark); font-weight: 700; }
+    hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
+    .back { display: inline-block; margin-bottom: 16px; min-height: 44px; line-height: 44px; text-decoration: none; }
+    code { font-size: 14px; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+  </style>
 </head>
-<body style="padding:24px; max-width:680px; margin:0 auto; display:block;">
-  <h1 style="font-family:var(--font-display); font-size:28px; margin-bottom:12px;">Kebijakan Privasi — Kilat</h1>
-  <p style="font-size:15px; color:var(--text2); line-height:1.6; margin-bottom:16px;">
-    <strong>Data tersimpan di HP ini.</strong> Kilat dirancang sebagai aplikasi offline-first untuk pemilik warung dan toko kelontong.
-  </p>
-  <ul style="font-size:14px; color:var(--text2); line-height:1.7; padding-left:20px; margin-bottom:20px;">
-    <li>Semua nama pelanggan, nomor telepon, catatan utang, dan pembayaran disimpan secara lokal di perangkat Anda (<code>localStorage</code>).</li>
-    <li>Kilat tidak mengumpulkan, mengirim, atau menjual data pelanggan Anda ke server mana pun.</li>
-    <li>Pengiriman pesan pengingat hanya membuka aplikasi WhatsApp resmi di perangkat Anda ketika Anda menekan tombol kirim.</li>
-  </ul>
-  <a href="./index.html" class="btn-primary tap-target" style="max-width:240px;">← Kembali ke Aplikasi Kilat</a>
+<body>
+  <main>
+    <a class="back" href="./">← Kilat</a>
+
+    <h1>Kebijakan Privasi · Privacy Policy</h1>
+    <div class="meta">Kilat oleh Sakred Studio · Berlaku sejak 2026-10-24</div>
+
+    <div class="card">
+      <p><strong>Versi singkat:</strong> semua yang Anda catat tersimpan di HP ini. Kilat tidak punya server, tidak ada akun, tidak ada pelacakan, dan tidak pernah memindahkan uang. Kilat hanya mencatat.</p>
+      <p><strong>Short version:</strong> everything you enter stays on your phone. Kilat has no server, no account, no analytics, and never moves money. It only keeps records.</p>
+    </div>
+
+    <h2>Apa yang disimpan aplikasi</h2>
+    <ul>
+      <li>Nama warung, nama pemilik, dan nomor WhatsApp Anda (jika Anda mengisinya).</li>
+      <li>Pelanggan yang Anda tambahkan: nama, nomor telepon, catatan barang.</li>
+      <li>Catatan utang dan pembayaran: jumlah, tanggal, catatan.</li>
+      <li>Pengaturan: nada pengingat, mode gelap, status Pro.</li>
+    </ul>
+    <p>Semua data ini disimpan di penyimpanan lokal browser (<code>localStorage</code>) di perangkat Anda. Tidak ada yang diunggah ke mana pun. Jika Anda menghapus aplikasi atau membersihkan data situs, data ikut hilang, kecuali Anda sudah menyimpan cadangan lewat <em>Pengaturan → Ekspor Cadangan JSON</em>.</p>
+
+    <h2>Apa yang keluar dari HP Anda</h2>
+    <ul>
+      <li><strong>Pengingat WhatsApp.</strong> Saat Anda menekan tombol kirim, Kilat hanya membuka aplikasi WhatsApp dengan teks pesan yang sudah disiapkan. Tidak ada yang terkirim sampai Anda menekan Kirim di dalam WhatsApp. Pesan berisi nama pelanggan, nama warung, jumlah catatan, lama hari, dan baris pendek "— Kilat" dengan tautan aplikasi.</li>
+      <li><strong>Kartu Ringkasan.</strong> Gambar PNG dibuat di HP Anda. Ke mana Anda membagikannya sepenuhnya pilihan Anda.</li>
+      <li><strong>Cadangan.</strong> Ekspor membuat berkas di perangkat Anda. Di mana Anda menyimpan atau membagikan berkas itu adalah urusan Anda.</li>
+    </ul>
+
+    <h2>Uang</h2>
+    <p>Kilat adalah buku catatan. Kilat tidak menerima, menyimpan, mentransfer, atau menagih uang, dan tidak terhubung ke bank, dompet digital, atau QRIS. Pembayaran terjadi di luar aplikasi, antara Anda dan pelanggan.</p>
+
+    <h2>Tanpa pelacakan</h2>
+    <p>Tidak ada analitik, tidak ada SDK iklan, tidak ada cookie, tidak ada font atau skrip pihak ketiga saat berjalan. Aplikasi bekerja sepenuhnya offline setelah pemuatan pertama.</p>
+
+    <h2>Anak-anak</h2>
+    <p>Aplikasi ini adalah alat umum untuk pemilik warung dewasa. Kilat tidak dengan sengaja mengumpulkan data dari anak-anak.</p>
+
+    <h2>Kontak</h2>
+    <p>Pertanyaan: <a href="mailto:sakredfamily@gmail.com">sakredfamily@gmail.com</a></p>
+
+    <hr>
+
+    <h2>In English</h2>
+    <p><strong>What the app stores:</strong> your shop name, owner name and WhatsApp number (if entered); the customers you add (name, phone number, note); credit and payment records (amount, date, note); and your settings. All of it lives in your browser's local storage on this device and is never uploaded.</p>
+    <p><strong>What leaves your phone:</strong> only the WhatsApp message you choose to send (the app opens WhatsApp with a pre-written text; nothing is sent until you press Send there), the summary card image you choose to share, and backup files you export.</p>
+    <p><strong>Money:</strong> Kilat is a ledger. It never receives, holds, transfers or collects money and is not connected to any bank, e-wallet or QRIS.</p>
+    <p><strong>No tracking:</strong> no analytics, no ads, no cookies, no third-party scripts.</p>
+    <p><strong>Contact:</strong> sakredfamily@gmail.com</p>
+  </main>
 </body>
 </html>

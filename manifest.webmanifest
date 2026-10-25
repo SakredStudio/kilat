@@ -3,7 +3,7 @@
   "short_name": "Kilat",
   "description": "Catat utang pelanggan warung & kirim pengingat WhatsApp sopan dalam 1 ketukan. 100% offline di HP Anda.",
   "lang": "id",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
