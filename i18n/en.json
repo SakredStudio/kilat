@@ -189,5 +189,16 @@
   "receipt_text_cta": "Send text only to WhatsApp {nama}",
   "receipt_download_cta": "Download PNG Image (1080×1350)",
   "receipt_back_btn": "← Back to Customer",
-  "receipt_fallback_hint": "If WhatsApp does not open with the image, download the PNG and send it in WhatsApp."
+  "receipt_fallback_hint": "If WhatsApp does not open with the image, download the PNG and send it in WhatsApp.",
+  "sheet_photo_label": "Photo of the bon (optional)",
+  "sheet_photo_pick_btn": "📷 Take / choose photo",
+  "sheet_photo_chosen": "Photo ready to attach",
+  "sheet_photo_hint": "Kept on this phone, shrunk to max 800 px.",
+  "photo_attach_btn": "📷 Photo",
+  "photo_thumb_aria": "View bon photo",
+  "photo_viewer_title": "Bon Photo",
+  "photo_delete_btn": "🗑️ Delete photo",
+  "photo_delete_confirm": "Delete this bon photo from the phone?",
+  "photo_close_btn": "Close",
+  "photo_failed": "Could not read that photo. Try another one."
 }

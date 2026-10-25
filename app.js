@@ -21,7 +21,7 @@ import {
   findCustomerByPhone,
   seedDemoData,
   exportBackupJson,
-  importBackupJson,
+  parseBackup,
   exportCsv,
   addDaysIsoDate,
   logReminder
@@ -35,6 +35,7 @@ import {
   shareOrDownloadCard
 } from './lib/share-card.js';
 import { buildReceiptModel, drawReceiptToCanvas, shareOrDownloadReceipt } from './lib/receipt-card.js';
+import { resizeImageFile, putPhoto, deletePhoto, getAllPhotos, clearPhotos, importPhotos, PHOTO_MAX_PX } from './lib/photos.js';
 
 let appState = null;
 let undoTimer = null;
@@ -60,8 +61,19 @@ let uiState = {
   proPrice: PRO_PRICE_FALLBACK,
   broadcast: { index: 0, sentIds: [], tone: 'sopan' },
   lastPaymentId: null, // payment just recorded -> "Kirim bukti" banner on detail
-  receiptPaymentId: null // payment shown on the receipt screen
+  receiptPaymentId: null, // payment shown on the receipt screen
+  photos: {}, // debtId -> dataURL, mirrored from IndexedDB (lib/photos.js)
+  pendingPhotoDataUrl: null, // picked in the add-debt sheet, saved with the new debt
+  photoViewerDebtId: null
 };
+
+async function removePhotosForDebts(debtIds) {
+  for (const id of debtIds) {
+    if (!uiState.photos[id]) continue;
+    delete uiState.photos[id];
+    try { await deletePhoto(id); } catch { /* ignore */ }
+  }
+}
 
 function formatDateTimeShort(iso) {
   const s = String(iso || '');
@@ -96,6 +108,10 @@ function showUndoToast(message) {
   undoTimer = setTimeout(() => {
     uiState.toastMessage = null;
     clearUndo();
+    if (uiState.pendingPhotoPurge && uiState.pendingPhotoPurge.length) {
+      removePhotosForDebts(uiState.pendingPhotoPurge);
+      uiState.pendingPhotoPurge = null;
+    }
     renderApp();
   }, 5000);
 }
@@ -523,6 +539,18 @@ function renderCustomerDetailScreen(lang, customer) {
                                ${sign} ${escapeHtml(rp(entry.amountIdr, { spaced: true }))}
                              </div>
                              ${
+                               isDebt
+                                 ? uiState.photos[entry.id]
+                                   ? `<button type="button" class="photo-thumb btn-view-photo" data-debt-id="${escapeHtml(entry.id)}" aria-label="${escapeHtml(t(lang, 'photo_thumb_aria'))}">
+                                        <img src="${uiState.photos[entry.id]}" alt="" />
+                                      </button>`
+                                   : `<button type="button" class="btn-attach-photo" data-debt-id="${escapeHtml(entry.id)}"
+                                        style="background:var(--bg2); border:1px solid var(--border); border-radius:8px; font-size:11px; font-weight:600; color:var(--text2); padding:0 10px; min-height:44px;">
+                                        ${escapeHtml(t(lang, 'photo_attach_btn'))}
+                                      </button>`
+                                 : ''
+                             }
+                             ${
                                !isDebt
                                  ? `<button type="button" class="btn-open-receipt" data-payment-id="${escapeHtml(entry.id)}"
                                       style="background:var(--bg2); border:1px solid var(--border); border-radius:8px; font-size:11px; font-weight:600; color:var(--text2); padding:0 10px; min-height:44px;">
@@ -538,6 +566,8 @@ function renderCustomerDetailScreen(lang, customer) {
                  </div>`
           }
         </div>
+
+        <input id="photo-attach-input" type="file" accept="image/*" capture="environment" style="display:none;" data-debt-id="" />
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <button type="button" id="btn-open-merge" class="btn-secondary" style="font-size:13px;">
@@ -1189,6 +1219,23 @@ function renderAddDebtSheet(lang, customer) {
           </div>
         </div>
         <div style="font-size:12px; color:var(--text3); margin-top:-6px;">${escapeHtml(t(lang, 'sheet_due_date_hint', { days: appState.warung.dueDays }))}</div>
+        <div class="field-group">
+          <span class="field-label">${escapeHtml(t(lang, 'sheet_photo_label'))}</span>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <label for="debt-photo-input" class="btn-secondary tap-target" style="cursor:pointer; width:auto; flex:1;">
+              ${escapeHtml(t(lang, 'sheet_photo_pick_btn'))}
+            </label>
+            ${
+              uiState.pendingPhotoDataUrl
+                ? `<span class="photo-thumb" aria-hidden="true"><img src="${uiState.pendingPhotoDataUrl}" alt="" /></span>`
+                : ''
+            }
+          </div>
+          <input id="debt-photo-input" type="file" accept="image/*" capture="environment" style="display:none;" />
+          <div id="debt-photo-status" style="font-size:12px; color:var(--text3);">
+            ${escapeHtml(uiState.pendingPhotoDataUrl ? t(lang, 'sheet_photo_chosen') : t(lang, 'sheet_photo_hint'))}
+          </div>
+        </div>
         <div style="display:flex; gap:10px; margin-top:6px;">
           <button type="button" id="btn-cancel-sheet" class="btn-secondary" style="flex:1;">
             ${escapeHtml(t(lang, 'sheet_cancel_btn'))}
@@ -1200,6 +1247,24 @@ function renderAddDebtSheet(lang, customer) {
       </form>
     </div>
   `;
+}
+
+function renderPhotoViewer(lang) {
+  const id = uiState.photoViewerDebtId;
+  const src = id ? uiState.photos[id] : null;
+  if (!id || !src) return '';
+  return `
+    <div class="photo-viewer" id="photo-viewer" role="dialog" aria-label="${escapeHtml(t(lang, 'photo_viewer_title'))}">
+      <img src="${src}" alt="${escapeHtml(t(lang, 'photo_viewer_title'))}" />
+      <div class="photo-viewer-actions">
+        <button type="button" id="btn-photo-delete" class="btn-secondary" style="color:var(--red); border-color:var(--red); background:#fff;">
+          ${escapeHtml(t(lang, 'photo_delete_btn'))}
+        </button>
+        <button type="button" id="btn-photo-close" class="btn-primary">
+          ${escapeHtml(t(lang, 'photo_close_btn'))}
+        </button>
+      </div>
+    </div>`;
 }
 
 function renderRecordPaySheet(lang, customer) {
@@ -1363,6 +1428,7 @@ export function renderApp() {
     ${renderUndoToast(lang)}
     ${renderBottomNav(lang)}
     ${sheetHtml}
+    ${renderPhotoViewer(lang)}
   `;
 
   if (uiState.screen === 'card') {
@@ -1534,6 +1600,8 @@ function bindEvents(selectedCustomer, lang) {
   if (deleteCustomerBtn && selectedCustomer) {
     deleteCustomerBtn.addEventListener('click', () => {
       if (!window.confirm(t(lang, 'customer_delete_confirm', { nama: selectedCustomer.name }))) return;
+      // Photos of this customer's debts are purged once the 5 s undo window closes
+      uiState.pendingPhotoPurge = appState.debts.filter((d) => d.customerId === selectedCustomer.id).map((d) => d.id);
       appState = deleteCustomer(appState, selectedCustomer.id);
       uiState.selectedCustomerId = null;
       uiState.activeSheet = null;
@@ -1585,6 +1653,73 @@ function bindEvents(selectedCustomer, lang) {
       renderApp();
     });
   });
+
+  // Photo notes: view, attach to an existing utang, pick one in the add-debt sheet
+  root.querySelectorAll('.btn-view-photo').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      uiState.photoViewerDebtId = btn.getAttribute('data-debt-id');
+      renderApp();
+    });
+  });
+
+  const photoAttachInput = root.querySelector('#photo-attach-input');
+  root.querySelectorAll('.btn-attach-photo').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!photoAttachInput) return;
+      photoAttachInput.dataset.debtId = btn.getAttribute('data-debt-id') || '';
+      photoAttachInput.click();
+    });
+  });
+  if (photoAttachInput) {
+    photoAttachInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      const debtId = photoAttachInput.dataset.debtId;
+      if (!file || !debtId) return;
+      try {
+        const dataUrl = await resizeImageFile(file, PHOTO_MAX_PX);
+        await putPhoto(debtId, dataUrl);
+        uiState.photos[debtId] = dataUrl;
+        renderApp();
+      } catch (err) {
+        console.error('Photo attach failed:', err);
+        window.alert(t(lang, 'photo_failed'));
+      }
+    });
+  }
+
+  const debtPhotoInput = root.querySelector('#debt-photo-input');
+  if (debtPhotoInput) {
+    debtPhotoInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        uiState.pendingPhotoDataUrl = await resizeImageFile(file, PHOTO_MAX_PX);
+        renderApp();
+      } catch (err) {
+        console.error('Photo read failed:', err);
+        const status = root.querySelector('#debt-photo-status');
+        if (status) status.textContent = t(lang, 'photo_failed');
+      }
+    });
+  }
+
+  const photoCloseBtn = root.querySelector('#btn-photo-close');
+  if (photoCloseBtn) {
+    photoCloseBtn.addEventListener('click', () => {
+      uiState.photoViewerDebtId = null;
+      renderApp();
+    });
+  }
+  const photoDeleteBtn = root.querySelector('#btn-photo-delete');
+  if (photoDeleteBtn) {
+    photoDeleteBtn.addEventListener('click', async () => {
+      const id = uiState.photoViewerDebtId;
+      if (!id || !window.confirm(t(lang, 'photo_delete_confirm'))) return;
+      await removePhotosForDebts([id]);
+      uiState.photoViewerDebtId = null;
+      renderApp();
+    });
+  }
 
   // Receipt card: open from the post-payment banner or any payment row
   root.querySelectorAll('.btn-open-receipt').forEach((btn) => {
@@ -1756,6 +1891,9 @@ function bindEvents(selectedCustomer, lang) {
       uiState.selectedCustomerId = null;
       uiState.searchQuery = '';
       uiState.riskFilter = 'Semua';
+      uiState.photos = {};
+      uiState.photoViewerDebtId = null;
+      clearPhotos().catch(() => {});
       appState = saveState(createInitialState());
       uiState.screen = 'setup';
       renderApp();
@@ -1765,7 +1903,7 @@ function bindEvents(selectedCustomer, lang) {
   const exportJsonBtn = root.querySelector('#btn-export-json');
   if (exportJsonBtn) {
     exportJsonBtn.addEventListener('click', () => {
-      const json = exportBackupJson(appState);
+      const json = exportBackupJson(appState, { photos: uiState.photos });
       triggerFileDownload(json, 'kilat-cadangan.json', 'application/json');
     });
   }
@@ -1781,7 +1919,12 @@ function bindEvents(selectedCustomer, lang) {
       }
       try {
         const text = await file.text();
-        appState = importBackupJson(text);
+        const { state, photos } = parseBackup(text);
+        appState = saveState(state);
+        if (Object.keys(photos).length > 0) {
+          await importPhotos(photos);
+          uiState.photos = { ...uiState.photos, ...photos };
+        }
         uiState.selectedCustomerId = null;
         uiState.screen = 'list';
         renderApp();
@@ -1843,6 +1986,13 @@ function bindEvents(selectedCustomer, lang) {
         dueDate: String(fd.get('dueDate') || '') || null
       });
       uiState.activeSheet = null;
+      const newestDebt = appState.debts[appState.debts.length - 1];
+      if (uiState.pendingPhotoDataUrl && newestDebt) {
+        const dataUrl = uiState.pendingPhotoDataUrl;
+        uiState.photos[newestDebt.id] = dataUrl;
+        putPhoto(newestDebt.id, dataUrl).catch((err) => console.error('Photo save failed:', err));
+      }
+      uiState.pendingPhotoDataUrl = null;
       showUndoToast(t(lang, 'undo_toast_debt'));
       renderApp();
     });
@@ -1872,9 +2022,12 @@ function bindEvents(selectedCustomer, lang) {
   const undoBtn = root.querySelector('#btn-undo-action');
   if (undoBtn) {
     undoBtn.addEventListener('click', () => {
+      const meta = getUndoMeta();
       const restored = undoLastAction();
       if (restored) {
         appState = restored;
+        uiState.pendingPhotoPurge = null; // customer restored: keep their photos
+        if (meta && meta.type === 'debt' && meta.entryId) removePhotosForDebts([meta.entryId]);
       }
       if (undoTimer) clearTimeout(undoTimer);
       uiState.toastMessage = null;
@@ -1909,6 +2062,7 @@ function bindEvents(selectedCustomer, lang) {
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
       uiState.activeSheet = null;
+      uiState.pendingPhotoDataUrl = null;
       renderApp();
     });
   }
@@ -2025,6 +2179,14 @@ export async function initApp() {
   uiState.screen = appState.settings.hasCompletedSetup ? 'list' : 'setup';
   saveState(appState);
   renderApp();
+
+  // Photo notes live in IndexedDB; mirror them into memory for thumbnails (optional, never blocks)
+  try {
+    uiState.photos = (await getAllPhotos()) || {};
+    renderApp();
+  } catch {
+    uiState.photos = {};
+  }
 
   // Play Billing: only inside the Play-installed app. Restores Pro on reinstall / new phone.
   try {

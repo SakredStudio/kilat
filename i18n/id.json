@@ -189,5 +189,16 @@
   "receipt_text_cta": "Kirim teks saja ke WhatsApp {nama}",
   "receipt_download_cta": "Unduh Gambar PNG (1080×1350)",
   "receipt_back_btn": "← Kembali ke Pelanggan",
-  "receipt_fallback_hint": "Jika WhatsApp tidak terbuka dengan gambar, unduh PNG lalu kirim gambarnya di WhatsApp."
+  "receipt_fallback_hint": "Jika WhatsApp tidak terbuka dengan gambar, unduh PNG lalu kirim gambarnya di WhatsApp.",
+  "sheet_photo_label": "Foto bon (opsional)",
+  "sheet_photo_pick_btn": "📷 Ambil / pilih foto",
+  "sheet_photo_chosen": "Foto siap dilampirkan",
+  "sheet_photo_hint": "Disimpan di HP ini, diperkecil ke maks. 800 px.",
+  "photo_attach_btn": "📷 Foto",
+  "photo_thumb_aria": "Lihat foto bon",
+  "photo_viewer_title": "Foto Bon",
+  "photo_delete_btn": "🗑️ Hapus foto",
+  "photo_delete_confirm": "Hapus foto bon ini dari HP?",
+  "photo_close_btn": "Tutup",
+  "photo_failed": "Foto tidak bisa dibaca. Coba foto lain."
 }
