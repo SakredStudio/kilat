@@ -26,3 +26,13 @@ node --test projects/kilat/app/tests/*.test.mjs
 4. **Kirim Pengingat (`Reminder`):** Pilihan 3 nada (`🙏 Sopan`, `⚡ Singkat`, `📢 Tegas`), pratinjau gelembung chat WhatsApp, kotak teks yang dapat diedit, dan tautan `wa.me/62...` dengan baris atribusi `— Kilat · https://sakredstudio.github.io/kilat`.
 5. **Kartu Ringkasan (`Share Card`):** Merender kartu laporan gelap `1080×1350` piksel ke `<canvas>` berisi total piutang dan 3 penunggak tertinggi, dibagikan melalui Web Share API (`navigator.share({ files })`) atau unduhan berkas PNG.
 6. **Pengaturan (`Settings`):** Nada default, Mode Gelap, pemuat data contoh (6 atau 12 pelanggan), ekspor/impor cadangan JSON, ekspor laporan CSV (Pro), dan halaman Kebijakan Privasi (`privacy.html`).
+
+## Deploy (GitHub Pages)
+
+Live at https://sakredstudio.github.io/kilat/. The public repo `SakredStudio/kilat` is a deploy mirror of this folder; the monorepo is the source of truth. From the sakred-os root, on master:
+
+```
+git subtree push --prefix=projects/kilat/app https://github.com/SakredStudio/kilat.git main
+```
+
+The workflow in `.github/workflows/deploy.yml` runs the tests and publishes the folder. Bump `CACHE_NAME` in `sw.js` first.
