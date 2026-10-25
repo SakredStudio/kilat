@@ -200,5 +200,19 @@
   "photo_delete_btn": "🗑️ Delete photo",
   "photo_delete_confirm": "Delete this bon photo from the phone?",
   "photo_close_btn": "Close",
-  "photo_failed": "Could not read that photo. Try another one."
+  "photo_failed": "Could not read that photo. Try another one.",
+  "settings_template_title": "Your own reminder template (Pro)",
+  "settings_template_desc": "Write the reminder in your shop's own voice. The variables {nama} {jumlah} {hari} {warung} {tanggal} are filled in automatically. The \"— Kilat\" line is always appended.",
+  "settings_template_pro_hint": "Unlock with Kilat Pro",
+  "settings_template_label": "Template text",
+  "settings_template_placeholder": "Example: Halo {nama}, catatan belanja di {warung} sebesar {jumlah} sudah {hari} hari. Terima kasih 🙏",
+  "settings_template_preview_label": "Preview",
+  "settings_template_save": "Save template",
+  "settings_template_reset": "Reset to default",
+  "settings_template_reset_confirm": "Remove your template and go back to the 3 built-in tones?",
+  "settings_template_saved": "Template saved. Pick the \"Custom\" tone when sending a reminder.",
+  "settings_template_active": "Template active: available as the \"Custom\" tone.",
+  "settings_template_empty_hint": "No template yet. Empty = the 3 built-in tones are used.",
+  "tone_custom_label": "✍️ Custom",
+  "tone_custom_desc": "Pro template"
 }

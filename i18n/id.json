@@ -200,5 +200,19 @@
   "photo_delete_btn": "🗑️ Hapus foto",
   "photo_delete_confirm": "Hapus foto bon ini dari HP?",
   "photo_close_btn": "Tutup",
-  "photo_failed": "Foto tidak bisa dibaca. Coba foto lain."
+  "photo_failed": "Foto tidak bisa dibaca. Coba foto lain.",
+  "settings_template_title": "Template pengingat sendiri (Pro)",
+  "settings_template_desc": "Tulis pesan pengingat dengan gaya warung Anda. Variabel {nama} {jumlah} {hari} {warung} {tanggal} diisi otomatis. Baris \"— Kilat\" selalu ditambahkan di akhir.",
+  "settings_template_pro_hint": "Buka dengan Kilat Pro",
+  "settings_template_label": "Teks template",
+  "settings_template_placeholder": "Contoh: Halo {nama}, catatan belanja di {warung} sebesar {jumlah} sudah {hari} hari. Terima kasih 🙏",
+  "settings_template_preview_label": "Pratinjau",
+  "settings_template_save": "Simpan template",
+  "settings_template_reset": "Reset ke bawaan",
+  "settings_template_reset_confirm": "Hapus template sendiri dan kembali ke 3 nada bawaan?",
+  "settings_template_saved": "Template tersimpan. Pilih nada \"Sendiri\" saat mengirim pengingat.",
+  "settings_template_active": "Template aktif: tersedia sebagai nada \"Sendiri\".",
+  "settings_template_empty_hint": "Belum ada template. Kosong = memakai 3 nada bawaan.",
+  "tone_custom_label": "✍️ Sendiri",
+  "tone_custom_desc": "Template Pro"
 }

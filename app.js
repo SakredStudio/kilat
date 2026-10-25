@@ -626,14 +626,7 @@ function renderReminderScreen(lang, customer) {
   }
   const w = appState.warung;
   const activeTone = uiState.reminderTone || appState.settings.tone || 'sopan';
-  const generatedMsg = buildReminderMessage({
-    tone: activeTone,
-    nama: customer.name,
-    jumlah: customer.balance,
-    hari: customer.daysOverdue,
-    warung: w.name,
-    tanggal: customer.nextDueDate || ''
-  });
+  const generatedMsg = composeReminder(customer, activeTone);
 
   const currentMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : generatedMsg;
   const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, currentMsg);
@@ -722,16 +715,38 @@ function renderReminderScreen(lang, customer) {
   `;
 }
 
+function hasCustomTemplate() {
+  return Boolean(appState.settings.isPro && String(appState.settings.customTemplate || '').trim());
+}
+
 function toneOptions(lang) {
-  return [
+  const base = [
     { id: 'sopan', label: t(lang, 'tone_sopan_label'), desc: t(lang, 'tone_sopan_desc') },
     { id: 'singkat', label: t(lang, 'tone_singkat_label'), desc: t(lang, 'tone_singkat_desc') },
     { id: 'tegas', label: t(lang, 'tone_tegas_label'), desc: t(lang, 'tone_tegas_desc') }
   ];
+  if (hasCustomTemplate()) {
+    base.push({ id: 'custom', label: t(lang, 'tone_custom_label'), desc: t(lang, 'tone_custom_desc') });
+  }
+  return base;
+}
+
+/** Build the WhatsApp reminder for a customer summary in a given tone ('custom' = Pro template). */
+function composeReminder(customer, tone) {
+  const useCustom = tone === 'custom' && hasCustomTemplate();
+  return buildReminderMessage({
+    tone: useCustom ? 'sopan' : tone,
+    nama: customer.name,
+    jumlah: customer.balance,
+    hari: customer.daysOverdue,
+    warung: appState.warung.name,
+    tanggal: customer.nextDueDate || '',
+    customTemplate: useCustom ? appState.settings.customTemplate : ''
+  });
 }
 
 function renderTonePicker(lang, activeTone, options = toneOptions(lang)) {
-  const cols = options.length;
+  const cols = options.length === 4 ? 2 : options.length;
   return `
     <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:8px;">
       ${options
@@ -787,14 +802,7 @@ function renderBroadcastScreen(lang, ledger) {
         <button type="button" id="btn-broadcast-finish" class="btn-primary" style="margin-top:8px;">${escapeHtml(t(lang, 'broadcast_back_btn'))}</button>
       </div>`;
   } else {
-    const msg = buildReminderMessage({
-      tone: b.tone,
-      nama: current.name,
-      jumlah: current.balance,
-      hari: current.daysOverdue,
-      warung: w.name,
-      tanggal: current.nextDueDate || ''
-    });
+    const msg = composeReminder(current, b.tone);
     const waHref = buildWaLink(current.phone62 || current.phoneRaw, msg);
     const isSent = sent.has(current.id);
     body = `
@@ -1021,6 +1029,19 @@ function renderReceiptScreen(lang, customer) {
     </div>`;
 }
 
+/** Sample rendering of a custom template (or the default sopan tone when empty). */
+function templatePreview(template) {
+  return buildReminderMessage({
+    tone: 'sopan',
+    nama: 'Pak Budi',
+    jumlah: 350000,
+    hari: 21,
+    warung: appState.warung.name,
+    tanggal: addDaysIsoDate(localIsoDate(new Date()), -7),
+    customTemplate: String(template || '')
+  });
+}
+
 function renderSettingsScreen(lang) {
   const s = appState.settings;
   return `
@@ -1071,6 +1092,38 @@ function renderSettingsScreen(lang) {
                  <button type="button" id="btn-open-pro-gate" class="btn-primary">⚡ ${escapeHtml(
                    uiState.billingAvailable ? t(lang, 'pro_buy_btn', { price: uiState.proPrice }) : t(lang, 'pro_gate_coming_soon')
                  )}</button>`
+          }
+        </div>
+
+        <!-- Pro: custom reminder template -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:10px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_template_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_template_desc'))}</div>
+          ${
+            s.isPro
+              ? `
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                  ${['{nama}', '{jumlah}', '{hari}', '{warung}', '{tanggal}']
+                    .map((v) => `<button type="button" class="tpl-var-chip" data-var="${escapeHtml(v)}" style="padding:6px 10px; border-radius:99px; border:1px solid var(--border); background:var(--bg); font-size:12px; font-weight:600; color:var(--primary-dark); min-height:44px;">${escapeHtml(v)}</button>`)
+                    .join('')}
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="settings-template-textarea">${escapeHtml(t(lang, 'settings_template_label'))}</label>
+                  <textarea id="settings-template-textarea" class="field-input" rows="5" style="resize:vertical; font-size:13px; line-height:1.5;"
+                    placeholder="${escapeHtml(t(lang, 'settings_template_placeholder'))}">${escapeHtml(s.customTemplate || '')}</textarea>
+                </div>
+                <div style="font-size:12px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:0.3px;">${escapeHtml(t(lang, 'settings_template_preview_label'))}</div>
+                <div style="background:#DCF8C6; border-radius:8px 8px 2px 8px; padding:10px 12px; border:1px solid var(--border);">
+                  <div id="settings-template-preview" style="font-size:13px; color:#111; line-height:1.6; white-space:pre-wrap; word-break:break-word;">${formatWaBoldHtml(templatePreview(s.customTemplate))}</div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                  <button type="button" id="btn-template-reset" class="btn-secondary" style="flex:1;">${escapeHtml(t(lang, 'settings_template_reset'))}</button>
+                  <button type="button" id="btn-template-save" class="btn-primary" style="flex:1;">${escapeHtml(t(lang, 'settings_template_save'))}</button>
+                </div>
+                <div id="settings-template-status" style="font-size:12px; color:var(--text3); min-height:16px;">${escapeHtml(s.customTemplate ? t(lang, 'settings_template_active') : t(lang, 'settings_template_empty_hint'))}</div>`
+              : `<button type="button" id="btn-template-pro-gate" class="btn-secondary">⚡ ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`
           }
         </div>
 
@@ -1853,6 +1906,51 @@ function bindEvents(selectedCustomer, lang) {
   if (toggleDarkBtn) {
     toggleDarkBtn.addEventListener('click', () => {
       appState = updateSettings(appState, { darkMode: !appState.settings.darkMode });
+      renderApp();
+    });
+  }
+
+  // Pro custom template editor: live preview, variable chips, save, reset
+  const templateTextarea = root.querySelector('#settings-template-textarea');
+  const templatePreviewEl = root.querySelector('#settings-template-preview');
+  const templateStatusEl = root.querySelector('#settings-template-status');
+  if (templateTextarea && templatePreviewEl) {
+    templateTextarea.addEventListener('input', () => {
+      templatePreviewEl.innerHTML = formatWaBoldHtml(templatePreview(templateTextarea.value));
+    });
+    root.querySelectorAll('.tpl-var-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const v = chip.getAttribute('data-var') || '';
+        const start = templateTextarea.selectionStart ?? templateTextarea.value.length;
+        const end = templateTextarea.selectionEnd ?? start;
+        templateTextarea.value = templateTextarea.value.slice(0, start) + v + templateTextarea.value.slice(end);
+        templateTextarea.focus();
+        templateTextarea.setSelectionRange(start + v.length, start + v.length);
+        templatePreviewEl.innerHTML = formatWaBoldHtml(templatePreview(templateTextarea.value));
+      });
+    });
+    const saveTplBtn = root.querySelector('#btn-template-save');
+    if (saveTplBtn) {
+      saveTplBtn.addEventListener('click', () => {
+        appState = updateSettings(appState, { customTemplate: templateTextarea.value.trim() });
+        if (templateStatusEl) templateStatusEl.textContent = t(lang, 'settings_template_saved');
+      });
+    }
+    const resetTplBtn = root.querySelector('#btn-template-reset');
+    if (resetTplBtn) {
+      resetTplBtn.addEventListener('click', () => {
+        if (appState.settings.customTemplate && !window.confirm(t(lang, 'settings_template_reset_confirm'))) return;
+        appState = updateSettings(appState, { customTemplate: '' });
+        if (uiState.reminderTone === 'custom') uiState.reminderTone = 'sopan';
+        renderApp();
+      });
+    }
+  }
+  const templateProGateBtn = root.querySelector('#btn-template-pro-gate');
+  if (templateProGateBtn) {
+    templateProGateBtn.addEventListener('click', () => {
+      uiState.billingNotice = '';
+      uiState.activeSheet = 'proGate';
       renderApp();
     });
   }
