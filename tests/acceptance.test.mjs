@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { activeBook } from '../lib/books.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,7 +58,7 @@ test('acceptance: 12 customers + 20 debts added, Tinggi filter, sopan WA reminde
   for (const c of customersInput) {
     state = addCustomer(state, c, mem);
   }
-  assert.equal(state.customers.length, 12);
+  assert.equal(activeBook(state).customers.length, 12);
 
   // 2. Add 20 debts across all risk levels relative to 2026-10-24
   const debtsInput = [
@@ -86,7 +87,7 @@ test('acceptance: 12 customers + 20 debts added, Tinggi filter, sopan WA reminde
   for (const d of debtsInput) {
     state = addDebt(state, d, mem);
   }
-  assert.equal(state.debts.length, 20);
+  assert.equal(activeBook(state).debts.length, 20);
   const elapsedMs = performance.now() - t0;
   assert.ok(elapsedMs < 180_000, `Adding 12 customers + 20 debts took ${elapsedMs}ms`);
 
@@ -103,7 +104,7 @@ test('acceptance: 12 customers + 20 debts added, Tinggi filter, sopan WA reminde
     nama: topTinggi.name,
     jumlah: topTinggi.balance,
     hari: topTinggi.daysOverdue,
-    warung: state.warung.name
+    warung: activeBook(state).warung.name
   });
   const waUrl = buildWaLink(topTinggi.phone62, sopanMsg);
   assert.ok(waUrl.startsWith('https://wa.me/6285678901234?text='));
@@ -151,9 +152,9 @@ test('acceptance: 12 customers + 20 debts added, Tinggi filter, sopan WA reminde
   const backupJson = exportBackupJson(state);
   mem.clear();
   const reimported = importBackupJson(backupJson, mem);
-  assert.equal(reimported.customers.length, 12);
-  assert.equal(reimported.debts.length, 20);
-  assert.equal(reimported.payments.length, 1);
+  assert.equal(activeBook(reimported).customers.length, 12);
+  assert.equal(activeBook(reimported).debts.length, 20);
+  assert.equal(activeBook(reimported).payments.length, 1);
 });
 
 test('acceptance: offline precache assets exist and zero external CDN calls in HTML/CSS/JS', () => {

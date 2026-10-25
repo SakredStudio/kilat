@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { activeBook } from '../lib/books.js';
 import {
   createInitialState,
   addCustomer,
@@ -31,11 +32,11 @@ test('supplier: hutang ledger math (FIFO, balance, due dates) on the supplier bo
   s = addSupplierDebt(s, { customerId: 's1', amountIdr: 2000000, date: '2026-10-01', dueDate: '2026-10-20' }, st);
   s = addSupplierDebt(s, { customerId: 's1', amountIdr: 500000, date: '2026-10-15', dueDate: '2026-11-01' }, st);
   s = addSupplierPayment(s, { customerId: 's1', amountIdr: 2000000, date: '2026-10-18' }, st);
-  assert.equal(s.suppliers.length, 1);
-  assert.equal(s.supplierDebts.length, 2);
-  assert.equal(s.supplierPayments.length, 1);
-  assert.equal(s.suppliers[0].id, 's1');
-  assert.equal(s.suppliers[0].phone62, '6281211112222');
+  assert.equal(activeBook(s).suppliers.length, 1);
+  assert.equal(activeBook(s).supplierDebts.length, 2);
+  assert.equal(activeBook(s).supplierPayments.length, 1);
+  assert.equal(activeBook(s).suppliers[0].id, 's1');
+  assert.equal(activeBook(s).suppliers[0].phone62, '6281211112222');
   assert.equal(BOOKS.supplier.parties, 'suppliers');
 
   const ledger = computeWarungLedger(s, '2026-10-24', { book: 'supplier' });
@@ -50,7 +51,7 @@ test('supplier: hutang ledger math (FIFO, balance, due dates) on the supplier bo
 
   // undo works for supplier entries too
   s = undoLastAction(st);
-  assert.equal(s.supplierPayments.length, 0);
+  assert.equal(activeBook(s).supplierPayments.length, 0);
 });
 
 test('supplier: the two books are isolated (customers untouched by supplier ops and vice versa)', () => {
@@ -76,33 +77,33 @@ test('supplier: the two books are isolated (customers untouched by supplier ops 
   // reminders are tagged with their book
   s = logReminder(s, { customerId: 'c1', book: 'supplier', sentAt: '2026-10-20T08:00:00.000Z' }, st);
   s = logReminder(s, { customerId: 'c1', sentAt: '2026-10-21T08:00:00.000Z' }, st);
-  assert.deepEqual(s.reminders.map((r) => r.book), ['supplier', 'customer']);
-  const supLatest = latestReminderByCustomer(s.reminders.filter((r) => r.book === 'supplier'));
+  assert.deepEqual(activeBook(s).reminders.map((r) => r.book), ['supplier', 'customer']);
+  const supLatest = latestReminderByCustomer(activeBook(s).reminders.filter((r) => r.book === 'supplier'));
   assert.equal(supLatest.c1.sentAt, '2026-10-20T08:00:00.000Z');
 
   // deleting the supplier leaves the customer, its debt and its reminder alone
   s = deleteSupplier(s, 'c1', st);
-  assert.equal(s.suppliers.length, 0);
-  assert.equal(s.supplierDebts.length, 0);
-  assert.equal(s.customers.length, 1);
-  assert.equal(s.debts.length, 1);
-  assert.deepEqual(s.reminders.map((r) => r.book), ['customer']);
+  assert.equal(activeBook(s).suppliers.length, 0);
+  assert.equal(activeBook(s).supplierDebts.length, 0);
+  assert.equal(activeBook(s).customers.length, 1);
+  assert.equal(activeBook(s).debts.length, 1);
+  assert.deepEqual(activeBook(s).reminders.map((r) => r.book), ['customer']);
 
   // old v1 states migrate with empty supplier arrays
   const old = migrate({ schemaVersion: 1, customers: [], debts: [], payments: [] });
-  assert.deepEqual([old.suppliers, old.supplierDebts, old.supplierPayments], [[], [], []]);
+  assert.deepEqual([activeBook(old).suppliers, activeBook(old).supplierDebts, activeBook(old).supplierPayments], [[], [], []]);
 });
 
 test('supplier: "ingatkan saya" pay plan persists and the polite WhatsApp note mentions it', () => {
   const st = mem();
   let s = addSupplier(createInitialState(), { id: 's1', name: 'Bu Grosir', phone: '0813' }, st);
   s = setSupplierPayPlan(s, 's1', { date: '2026-10-30', note: 'setelah setoran' }, st);
-  assert.deepEqual(s.suppliers[0].payPlan, { date: '2026-10-30', note: 'setelah setoran' });
-  assert.deepEqual(migrate(JSON.parse(JSON.stringify(s))).suppliers[0].payPlan, { date: '2026-10-30', note: 'setelah setoran' });
+  assert.deepEqual(activeBook(s).suppliers[0].payPlan, { date: '2026-10-30', note: 'setelah setoran' });
+  assert.deepEqual(activeBook(migrate(JSON.parse(JSON.stringify(s)))).suppliers[0].payPlan, { date: '2026-10-30', note: 'setelah setoran' });
   s = setSupplierPayPlan(s, 's1', { date: 'bad', note: '' }, st);
-  assert.equal(s.suppliers[0].payPlan, undefined, 'empty plan is dropped');
+  assert.equal(activeBook(s).suppliers[0].payPlan, undefined, 'empty plan is dropped');
   s = setSupplierPayPlan(s, 's1', null, st);
-  assert.equal(s.suppliers[0].payPlan, undefined);
+  assert.equal(activeBook(s).suppliers[0].payPlan, undefined);
   assert.throws(() => setSupplierPayPlan(s, 'nope', null, st), /not found/);
 
   const withDate = buildSupplierMessage({ nama: 'Bu Grosir', jumlah: 1500000, warung: 'Warung Bu Siti', tanggal: '2026-10-30' });

@@ -260,5 +260,20 @@
   "supplier_plan_note_label": "Note",
   "supplier_plan_note_placeholder": "Example: pay half first after the deposit",
   "supplier_plan_clear": "Clear plan",
-  "supplier_reminder_note": "Messages to suppliers are always polite: a note on when the shop plans to pay. The payment itself happens outside Kilat."
+  "supplier_reminder_note": "Messages to suppliers are always polite: a note on when the shop plans to pay. The payment itself happens outside Kilat.",
+  "books_switcher_title": "Choose Shop",
+  "books_switch_hint": "Each shop keeps its own receivables, payables and shop profile. Tap to switch.",
+  "books_active_label": "Active shop: {nama}",
+  "books_count_customers": "{count} customers · {suppliers} suppliers",
+  "books_add_name_label": "Add a new shop",
+  "books_add_name_placeholder": "Example: Market Branch",
+  "books_add_submit": "+ Add",
+  "books_delete_btn": "Delete shop",
+  "books_delete_confirm": "Delete shop \"{nama}\" with all its customers, suppliers and records? You will have 5 seconds to undo.",
+  "books_limit_free": "Free tier: 1 shop. Kilat Pro: up to 5 shops in one app.",
+  "books_limit_pro": "Limit of {limit} shops reached.",
+  "undo_toast_book": "Shop deleted",
+  "settings_books_title": "Multi-shop (Pro)",
+  "settings_books_desc": "Families running 2–3 kiosks: switch books from the shop name above the customer list. Free 1 shop, Pro up to 5.",
+  "settings_books_open_btn": "Manage shops"
 }

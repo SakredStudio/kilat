@@ -260,5 +260,20 @@
   "supplier_plan_note_label": "Catatan",
   "supplier_plan_note_placeholder": "Contoh: bayar setengah dulu setelah setoran",
   "supplier_plan_clear": "Hapus rencana",
-  "supplier_reminder_note": "Pesan ke supplier selalu bernada sopan: kabar kapan warung berencana membayar. Pembayaran dilakukan sendiri di luar Kilat."
+  "supplier_reminder_note": "Pesan ke supplier selalu bernada sopan: kabar kapan warung berencana membayar. Pembayaran dilakukan sendiri di luar Kilat.",
+  "books_switcher_title": "Pilih Warung",
+  "books_switch_hint": "Setiap warung punya buku piutang, hutang, dan pengaturan toko sendiri. Ketuk untuk berpindah.",
+  "books_active_label": "Warung aktif: {nama}",
+  "books_count_customers": "{count} pelanggan · {suppliers} supplier",
+  "books_add_name_label": "Tambah warung baru",
+  "books_add_name_placeholder": "Contoh: Warung Cabang Pasar",
+  "books_add_submit": "+ Tambah",
+  "books_delete_btn": "Hapus warung",
+  "books_delete_confirm": "Hapus warung \"{nama}\" beserta semua pelanggan, supplier, dan catatannya? Anda punya 5 detik untuk mengurungkan.",
+  "books_limit_free": "Versi gratis: 1 warung. Kilat Pro: hingga 5 warung dalam satu aplikasi.",
+  "books_limit_pro": "Batas {limit} warung tercapai.",
+  "undo_toast_book": "Warung dihapus",
+  "settings_books_title": "Multi-warung (Pro)",
+  "settings_books_desc": "Keluarga yang menjalankan 2–3 kios: ganti buku dari nama warung di atas daftar pelanggan. Gratis 1 warung, Pro hingga 5.",
+  "settings_books_open_btn": "Kelola warung"
 }

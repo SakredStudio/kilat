@@ -15,6 +15,7 @@ import {
   PHOTO_MAX_PX
 } from '../lib/photos.js';
 import { createInitialState, addCustomer, addDebt, exportBackupJson, parseBackup, importBackupJson } from '../lib/store.js';
+import { activeBook } from '../lib/books.js';
 
 // 1x1 transparent PNG
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -59,11 +60,11 @@ test('photos: JSON backup embeds photos keyed by debt id and parseBackup extract
   assert.ok(!JSON.parse(plain).photos, 'no photos key when none given');
   const withPhotos = exportBackupJson(s, { photos: { d1: PNG } });
   const parsed = parseBackup(withPhotos);
-  assert.equal(parsed.state.debts.length, 1);
+  assert.equal(activeBook(parsed.state).debts.length, 1);
   assert.deepEqual(parsed.photos, { d1: PNG });
   // importBackupJson ignores the photos key and still restores the ledger
   const restored = importBackupJson(withPhotos, st);
-  assert.equal(restored.debts[0].id, 'd1');
+  assert.equal(activeBook(restored).debts[0].id, 'd1');
   assert.equal(restored.photos, undefined);
   // Junk values are dropped
   assert.deepEqual(parseBackup(JSON.stringify({ ...JSON.parse(plain), photos: { d1: 'x' } })).photos, {});

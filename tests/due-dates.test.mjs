@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, addCustomer, addDebt, addPayment, migrate } from '../lib/store.js';
+import { activeBook } from '../lib/books.js';
 import { computeWarungLedger, dueBuckets } from '../lib/ledger.js';
 import { buildReminderMessage, REMINDER_TEMPLATES_DUE, SHARE_LINE, formatTanggal } from '../lib/wa.js';
 
@@ -19,20 +20,20 @@ test('due-dates: migrate adds dueDate=null to debts without one and keeps valid 
       { id: 'd3', customerId: 'c1', amountIdr: 1000, date: '2026-10-01', dueDate: 'garbage' }
     ]
   });
-  assert.equal(s.debts[0].dueDate, null);
-  assert.equal(s.debts[1].dueDate, '2026-10-15');
-  assert.equal(s.debts[2].dueDate, null);
+  assert.equal(activeBook(s).debts[0].dueDate, null);
+  assert.equal(activeBook(s).debts[1].dueDate, '2026-10-15');
+  assert.equal(activeBook(s).debts[2].dueDate, null);
 });
 
 test('due-dates: addDebt defaults dueDate to date + dueDays, honours explicit date, and null clears it', () => {
   const st = mem();
   let s = addCustomer(createInitialState(), { id: 'c1', name: 'Pak Budi', phone: '081234567890' }, st);
   s = addDebt(s, { customerId: 'c1', amountIdr: 10000, date: '2026-10-01' }, st);
-  assert.equal(s.debts[0].dueDate, '2026-10-15'); // dueDays 14
+  assert.equal(activeBook(s).debts[0].dueDate, '2026-10-15'); // dueDays 14
   s = addDebt(s, { customerId: 'c1', amountIdr: 10000, date: '2026-10-01', dueDate: '2026-10-05' }, st);
-  assert.equal(s.debts[1].dueDate, '2026-10-05');
+  assert.equal(activeBook(s).debts[1].dueDate, '2026-10-05');
   s = addDebt(s, { customerId: 'c1', amountIdr: 10000, date: '2026-10-01', dueDate: null }, st);
-  assert.equal(s.debts[2].dueDate, null);
+  assert.equal(activeBook(s).debts[2].dueDate, null);
 });
 
 test('due-dates: dueBuckets with injected today splits today / overdue / upcoming and follows FIFO payments', () => {

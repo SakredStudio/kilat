@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { activeBook } from '../lib/books.js';
 import {
   createInitialState,
   addCustomer,
@@ -34,16 +35,16 @@ function seed() {
 test('customers: mergeCustomers moves debts and payments, sums balances, keeps both phones in the note, and is undoable', () => {
   let { s, st } = seed();
   s = mergeCustomers(s, 'b', 'a', st);
-  assert.equal(s.customers.length, 2);
-  assert.ok(!s.customers.some((c) => c.id === 'b'));
-  const a = s.customers.find((c) => c.id === 'a');
+  assert.equal(activeBook(s).customers.length, 2);
+  assert.ok(!activeBook(s).customers.some((c) => c.id === 'b'));
+  const a = activeBook(s).customers.find((c) => c.id === 'a');
   assert.equal(a.phone62, '6281234567890');
   assert.ok(a.note.includes('Sembako'));
   assert.ok(a.note.includes('Rokok'));
   assert.ok(a.note.includes('Nomor lain: +62 857 0000 1111'));
-  assert.equal(s.debts.filter((d) => d.customerId === 'a').length, 3);
-  assert.equal(s.payments.filter((p) => p.customerId === 'a').length, 1);
-  assert.equal(s.debts.filter((d) => d.customerId === 'b').length, 0);
+  assert.equal(activeBook(s).debts.filter((d) => d.customerId === 'a').length, 3);
+  assert.equal(activeBook(s).payments.filter((p) => p.customerId === 'a').length, 1);
+  assert.equal(activeBook(s).debts.filter((d) => d.customerId === 'b').length, 0);
 
   const ledger = computeWarungLedger(s, '2026-10-24');
   const merged = ledger.customers.find((c) => c.id === 'a');
@@ -54,8 +55,8 @@ test('customers: mergeCustomers moves debts and payments, sums balances, keeps b
 
   assert.equal(getUndoMeta().type, 'merge');
   s = undoLastAction(st);
-  assert.equal(s.customers.length, 3);
-  assert.equal(s.debts.filter((d) => d.customerId === 'b').length, 2);
+  assert.equal(activeBook(s).customers.length, 3);
+  assert.equal(activeBook(s).debts.filter((d) => d.customerId === 'b').length, 2);
 
   assert.throws(() => mergeCustomers(s, 'a', 'a', st), /itself/);
   assert.throws(() => mergeCustomers(s, 'a', 'zzz', st), /not found/);
@@ -75,14 +76,14 @@ test('customers: findCustomerByPhone detects duplicates across formats and respe
 test('customers: deleteCustomer removes the customer with their records and can be undone', () => {
   let { s, st } = seed();
   s = deleteCustomer(s, 'b', st);
-  assert.equal(s.customers.length, 2);
-  assert.equal(s.debts.length, 1);
-  assert.equal(s.payments.length, 0);
+  assert.equal(activeBook(s).customers.length, 2);
+  assert.equal(activeBook(s).debts.length, 1);
+  assert.equal(activeBook(s).payments.length, 0);
   assert.equal(getUndoMeta().type, 'customer');
   s = undoLastAction(st);
-  assert.equal(s.customers.length, 3);
-  assert.equal(s.debts.length, 3);
-  assert.equal(s.payments.length, 1);
+  assert.equal(activeBook(s).customers.length, 3);
+  assert.equal(activeBook(s).debts.length, 3);
+  assert.equal(activeBook(s).payments.length, 1);
   // Unknown id is a no-op
-  assert.equal(deleteCustomer(s, 'nope', st).customers.length, 3);
+  assert.equal(activeBook(deleteCustomer(s, 'nope', st)).customers.length, 3);
 });

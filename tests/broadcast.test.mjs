@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, addCustomer, addDebt, addPayment, logReminder, deleteCustomer, mergeCustomers, migrate } from '../lib/store.js';
+import { activeBook } from '../lib/books.js';
 import { computeWarungLedger } from '../lib/ledger.js';
 import { buildBroadcastQueue, queueProgress, latestReminderByCustomer, isOverdueForBroadcast } from '../lib/broadcast.js';
 
@@ -31,7 +32,7 @@ function seed() {
 test('broadcast: queue contains only overdue customers, highest risk first, then days, then balance', () => {
   const { s } = seed();
   const ledger = computeWarungLedger(s, '2026-10-24');
-  const queue = buildBroadcastQueue(ledger.customers, s.reminders);
+  const queue = buildBroadcastQueue(ledger.customers, activeBook(s).reminders);
   assert.deepEqual(queue.map((c) => c.id), ['hiBig', 'hiSmall', 'mid', 'dueOnly']);
   assert.ok(queue.every((c) => c.lastRemindedAt === null));
   const low = ledger.customers.find((c) => c.id === 'low');
@@ -44,28 +45,28 @@ test('broadcast: logReminder journals {customerId, sentAt, tone}, latest wins, f
   s = logReminder(s, { customerId: 'hiBig', tone: 'tegas', sentAt: '2026-10-20T09:00:00.000Z' }, st);
   s = logReminder(s, { customerId: 'hiBig', tone: 'sopan', sentAt: '2026-10-24T09:41:00.000Z' }, st);
   s = logReminder(s, { customerId: 'mid', tone: 'singkat', sentAt: '2026-10-23T08:00:00.000Z' }, st);
-  assert.equal(s.reminders.length, 3);
-  assert.ok(s.reminders.every((r) => r.id && r.customerId && r.sentAt && r.tone));
+  assert.equal(activeBook(s).reminders.length, 3);
+  assert.ok(activeBook(s).reminders.every((r) => r.id && r.customerId && r.sentAt && r.tone));
   assert.throws(() => logReminder(s, { customerId: 'ghost' }, st), /not found/);
 
-  const latest = latestReminderByCustomer(s.reminders);
+  const latest = latestReminderByCustomer(activeBook(s).reminders);
   assert.equal(latest.hiBig.sentAt, '2026-10-24T09:41:00.000Z');
   assert.equal(latest.hiBig.tone, 'sopan');
   assert.equal(latest.mid.tone, 'singkat');
   assert.equal(latest.low, undefined);
 
-  const queue = buildBroadcastQueue(computeWarungLedger(s, '2026-10-24').customers, s.reminders);
+  const queue = buildBroadcastQueue(computeWarungLedger(s, '2026-10-24').customers, activeBook(s).reminders);
   assert.equal(queue[0].lastRemindedAt, '2026-10-24T09:41:00.000Z');
 
   // Survives a JSON round trip through migrate
   const again = migrate(JSON.parse(JSON.stringify(s)));
-  assert.equal(again.reminders.length, 3);
+  assert.equal(activeBook(again).reminders.length, 3);
 
   // Merge moves the journal; delete drops it
   s = mergeCustomers(s, 'mid', 'hiSmall', st);
-  assert.equal(s.reminders.filter((r) => r.customerId === 'hiSmall').length, 1);
+  assert.equal(activeBook(s).reminders.filter((r) => r.customerId === 'hiSmall').length, 1);
   s = deleteCustomer(s, 'hiBig', st);
-  assert.equal(s.reminders.filter((r) => r.customerId === 'hiBig').length, 0);
+  assert.equal(activeBook(s).reminders.filter((r) => r.customerId === 'hiBig').length, 0);
 });
 
 test('broadcast: queueProgress reports position, sent and skipped counts and completion', () => {

@@ -29,8 +29,14 @@ import {
   addSupplierDebt,
   addSupplierPayment,
   deleteSupplier,
-  setSupplierPayPlan
+  setSupplierPayPlan,
+  activeBook,
+  canAddBook,
+  addBook,
+  switchBook,
+  deleteBook
 } from './lib/store.js';
+import { bookLimit } from './lib/books.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 import { buildBroadcastQueue, queueProgress, latestReminderByCustomer } from './lib/broadcast.js';
 import { buildReminderMessage, buildSupplierMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
@@ -79,6 +85,10 @@ const BOOK_FNS = {
   customer: { addParty: addCustomer, addDebt, addPayment, deleteParty: deleteCustomer },
   supplier: { addParty: addSupplier, addDebt: addSupplierDebt, addPayment: addSupplierPayment, deleteParty: deleteSupplier }
 };
+/** The active warung book (multi-warung, v3): every screen reads ledgers through this. */
+function wb() {
+  return activeBook(appState);
+}
 function isSupplierBook() {
   return uiState.book === 'supplier';
 }
@@ -86,16 +96,16 @@ function bookFns() {
   return BOOK_FNS[uiState.book] || BOOK_FNS.customer;
 }
 function parties() {
-  return isSupplierBook() ? appState.suppliers : appState.customers;
+  return isSupplierBook() ? wb().suppliers : wb().customers;
 }
 function bookDebts() {
-  return isSupplierBook() ? appState.supplierDebts : appState.debts;
+  return isSupplierBook() ? wb().supplierDebts : wb().debts;
 }
 function bookPayments() {
-  return isSupplierBook() ? appState.supplierPayments : appState.payments;
+  return isSupplierBook() ? wb().supplierPayments : wb().payments;
 }
 function bookReminders() {
-  return appState.reminders.filter((r) => r.book === uiState.book);
+  return wb().reminders.filter((r) => r.book === uiState.book);
 }
 function ledgerFor(book = uiState.book) {
   return computeWarungLedger(appState, new Date(), { book });
@@ -194,7 +204,7 @@ function applyTheme() {
 }
 
 function renderSetupScreen(lang) {
-  const w = appState.warung;
+  const w = wb().warung;
   const previewName = escapeHtml(w.name || 'Warung Anda');
   return `
     <div class="screen-body" data-screen="setup">
@@ -263,7 +273,7 @@ function renderSetupScreen(lang) {
 }
 
 function renderCustomerListScreen(lang, ledger) {
-  const w = appState.warung;
+  const w = wb().warung;
   const filtered = filterCustomers(ledger.customers, {
     search: uiState.searchQuery,
     riskFilter: uiState.riskFilter
@@ -295,7 +305,10 @@ function renderCustomerListScreen(lang, ledger) {
       <div style="background:var(--primary); padding:16px 16px 14px; color:#fff;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:12px;">
           <div>
-            <div style="font-size:11px; color:rgba(255,255,255,0.75); font-weight:500;">${escapeHtml(w.name)}</div>
+            <button type="button" id="btn-open-book-switcher" aria-label="${escapeHtml(t(lang, 'books_switcher_title'))}"
+              style="background:none; border:none; padding:0; min-height:44px; margin:-10px 0 -8px; color:rgba(255,255,255,0.85); font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:4px; text-align:left;">
+              🏪 ${escapeHtml(w.name)} ▾${appState.books.length > 1 ? ` <span style="opacity:0.7;">(${appState.books.length})</span>` : ''}
+            </button>
             <h1 style="font-family:var(--font-display); font-size:21px; color:#fff; margin-top:2px;">
               ${escapeHtml(bk(lang, 'list_subtitle'))}
             </h1>
@@ -369,7 +382,7 @@ function renderCustomerListScreen(lang, ledger) {
             ? `<div style="text-align:center; padding:32px 16px; color:var(--text3);">
                  <p style="font-size:14px; margin-bottom:12px;">${escapeHtml(bk(lang, 'empty_customers'))}</p>
                  ${
-                   !isSupplierBook() && appState.customers.length === 0
+                   !isSupplierBook() && wb().customers.length === 0
                      ? `<button type="button" id="btn-seed-demo-empty" class="btn-secondary">${escapeHtml(t(lang, 'empty_customers_cta'))}</button>`
                      : ''
                  }
@@ -463,7 +476,7 @@ function renderCustomerDetailScreen(lang, customer) {
         : 'var(--primary-dark)';
   const lastReminded = latestReminderByCustomer(bookReminders())[customer.id] || null;
   const justPaid = uiState.lastPaymentId && !isSupplierBook()
-    ? appState.payments.find((p) => p.id === uiState.lastPaymentId && p.customerId === customer.id) || null
+    ? wb().payments.find((p) => p.id === uiState.lastPaymentId && p.customerId === customer.id) || null
     : null;
   const supplierPlan = isSupplierBook() && customer.payPlan ? customer.payPlan : null;
 
@@ -666,7 +679,7 @@ function renderCustomerDetailScreen(lang, customer) {
 }
 
 function renderMergeSheet(lang, customer) {
-  const others = appState.customers.filter((c) => c.id !== customer.id);
+  const others = wb().customers.filter((c) => c.id !== customer.id);
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
       <form class="sheet-panel" id="form-merge-customer">
@@ -707,7 +720,7 @@ function renderReminderScreen(lang, customer) {
   if (!customer) {
     return renderCustomerListScreen(lang, ledgerFor());
   }
-  const w = appState.warung;
+  const w = wb().warung;
   const activeTone = uiState.reminderTone || appState.settings.tone || 'sopan';
   const generatedMsg = isSupplierBook()
     ? buildSupplierMessage({
@@ -839,7 +852,7 @@ function composeReminder(customer, tone) {
     nama: customer.name,
     jumlah: customer.balance,
     hari: customer.daysOverdue,
-    warung: appState.warung.name,
+    warung: wb().warung.name,
     tanggal: customer.nextDueDate || '',
     customTemplate: useCustom ? appState.settings.customTemplate : ''
   });
@@ -883,8 +896,8 @@ function renderWaBubble(lang, phoneLabel, message) {
 }
 
 function renderBroadcastScreen(lang, ledger) {
-  const w = appState.warung;
-  const queue = buildBroadcastQueue(ledger.customers, appState.reminders);
+  const w = wb().warung;
+  const queue = buildBroadcastQueue(ledger.customers, wb().reminders);
   const b = uiState.broadcast;
   const sent = new Set(b.sentIds);
   const progress = queueProgress(queue, b.index, sent);
@@ -1229,7 +1242,7 @@ function templatePreview(template) {
     nama: 'Pak Budi',
     jumlah: 350000,
     hari: 21,
-    warung: appState.warung.name,
+    warung: wb().warung.name,
     tanggal: addDaysIsoDate(localIsoDate(new Date()), -7),
     customTemplate: String(template || '')
   });
@@ -1286,6 +1299,16 @@ function renderSettingsScreen(lang) {
                    uiState.billingAvailable ? t(lang, 'pro_buy_btn', { price: uiState.proPrice }) : t(lang, 'pro_gate_coming_soon')
                  )}</button>`
           }
+        </div>
+
+        <!-- Multi-warung -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_books_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text);">${escapeHtml(t(lang, 'books_active_label', { nama: wb().warung.name }))} · ${appState.books.length}/${bookLimit(appState)}</div>
+          <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'settings_books_desc'))}</div>
+          <button type="button" id="btn-settings-books" class="btn-secondary">🏪 ${escapeHtml(t(lang, 'settings_books_open_btn'))}</button>
         </div>
 
         <!-- Statistik -->
@@ -1434,7 +1457,7 @@ function renderAddCustomerSheet(lang) {
 
 function renderAddDebtSheet(lang, customer) {
   const today = localIsoDate(new Date());
-  const defaultDue = addDaysIsoDate(today, appState.warung.dueDays);
+  const defaultDue = addDaysIsoDate(today, wb().warung.dueDays);
   const quickAmounts = [25000, 50000, 100000, 200000];
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
@@ -1473,7 +1496,7 @@ function renderAddDebtSheet(lang, customer) {
             <input id="debt-due-date" name="dueDate" class="field-input" type="date" value="${defaultDue}" />
           </div>
         </div>
-        <div style="font-size:12px; color:var(--text3); margin-top:-6px;">${escapeHtml(t(lang, 'sheet_due_date_hint', { days: appState.warung.dueDays }))}</div>
+        <div style="font-size:12px; color:var(--text3); margin-top:-6px;">${escapeHtml(t(lang, 'sheet_due_date_hint', { days: wb().warung.dueDays }))}</div>
         <div class="field-group">
           <span class="field-label">${escapeHtml(t(lang, 'sheet_photo_label'))}</span>
           <div style="display:flex; align-items:center; gap:10px;">
@@ -1518,6 +1541,57 @@ function renderPhotoViewer(lang) {
         <button type="button" id="btn-photo-close" class="btn-primary">
           ${escapeHtml(t(lang, 'photo_close_btn'))}
         </button>
+      </div>
+    </div>`;
+}
+
+function renderBookSwitcherSheet(lang) {
+  const limit = bookLimit(appState);
+  const canAdd = canAddBook(appState);
+  return `
+    <div class="sheet-backdrop" id="sheet-backdrop">
+      <div class="sheet-panel">
+        <h2 style="font-family:var(--font-display); font-size:20px; color:var(--text);">${escapeHtml(t(lang, 'books_switcher_title'))}</h2>
+        <p style="font-size:13px; color:var(--text2); line-height:1.5;">${escapeHtml(t(lang, 'books_switch_hint'))}</p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          ${appState.books
+            .map((b) => {
+              const active = b.id === appState.activeBookId;
+              return `
+                <div style="display:flex; gap:8px; align-items:stretch;">
+                  <button type="button" class="btn-switch-book" data-book-id="${escapeHtml(b.id)}"
+                    style="flex:1; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; padding:10px 14px; min-height:56px; border-radius:var(--radius-sm); border:2px solid ${active ? 'var(--primary)' : 'var(--border)'}; background:${active ? 'var(--primary-light)' : 'var(--card)'};">
+                    <span style="min-width:0;">
+                      <span style="display:block; font-weight:700; font-size:14px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${active ? '✓ ' : ''}${escapeHtml(b.warung.name)}</span>
+                      <span style="display:block; font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'books_count_customers', { count: b.customers.length, suppliers: b.suppliers.length }))}</span>
+                    </span>
+                  </button>
+                  ${
+                    appState.books.length > 1
+                      ? `<button type="button" class="btn-delete-book" data-book-id="${escapeHtml(b.id)}" aria-label="${escapeHtml(t(lang, 'books_delete_btn'))}"
+                           style="min-width:44px; min-height:44px; border-radius:var(--radius-sm); border:1.5px solid var(--border); background:var(--card); color:var(--red); font-size:16px;">🗑️</button>`
+                      : ''
+                  }
+                </div>`;
+            })
+            .join('')}
+        </div>
+        ${
+          canAdd
+            ? `<form id="form-add-book" style="display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--border); padding-top:12px;">
+                 <label class="field-label" for="add-book-name">${escapeHtml(t(lang, 'books_add_name_label'))}</label>
+                 <div style="display:flex; gap:8px;">
+                   <input id="add-book-name" name="name" class="field-input" type="text" required maxlength="40"
+                     placeholder="${escapeHtml(t(lang, 'books_add_name_placeholder'))}" />
+                   <button type="submit" class="btn-primary" style="width:auto; white-space:nowrap;">${escapeHtml(t(lang, 'books_add_submit'))}</button>
+                 </div>
+               </form>`
+            : `<div style="border-top:1px solid var(--border); padding-top:12px; font-size:13px; color:var(--text3); line-height:1.5;">
+                 ${escapeHtml(appState.settings.isPro ? t(lang, 'books_limit_pro', { limit }) : t(lang, 'books_limit_free'))}
+               </div>
+               ${appState.settings.isPro ? '' : `<button type="button" id="btn-books-pro-gate" class="btn-secondary">⚡ ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`}`
+        }
+        <button type="button" id="btn-cancel-sheet" class="btn-secondary">${escapeHtml(t(lang, 'pro_gate_close_btn'))}</button>
       </div>
     </div>`;
 }
@@ -1705,6 +1779,8 @@ export function renderApp() {
     sheetHtml = renderMergeSheet(lang, selectedCustomer);
   } else if (uiState.activeSheet === 'payPlan' && selectedCustomer && isSupplierBook()) {
     sheetHtml = renderPayPlanSheet(lang, selectedCustomer);
+  } else if (uiState.activeSheet === 'books') {
+    sheetHtml = renderBookSwitcherSheet(lang);
   } else if (uiState.activeSheet === 'proGate') {
     sheetHtml = renderProGateSheet(lang);
   }
@@ -1828,6 +1904,77 @@ function bindEvents(selectedCustomer, lang) {
   if (openRecordPayBtn) {
     openRecordPayBtn.addEventListener('click', () => {
       uiState.activeSheet = 'recordPay';
+      renderApp();
+    });
+  }
+
+  // Multi-warung: switcher sheet, switch / add / delete book
+  root.querySelectorAll('#btn-open-book-switcher, #btn-settings-books').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      uiState.activeSheet = 'books';
+      renderApp();
+    });
+  });
+  root.querySelectorAll('.btn-switch-book').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-book-id');
+      if (id && id !== appState.activeBookId) {
+        appState = switchBook(appState, id);
+        uiState.selectedCustomerId = null;
+        uiState.searchQuery = '';
+        uiState.riskFilter = 'Semua';
+      }
+      uiState.activeSheet = null;
+      uiState.screen = 'list';
+      renderApp();
+    });
+  });
+  root.querySelectorAll('.btn-delete-book').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-book-id');
+      const target = appState.books.find((b) => b.id === id);
+      if (!target) return;
+      if (!window.confirm(t(lang, 'books_delete_confirm', { nama: target.warung.name }))) return;
+      try {
+        appState = deleteBook(appState, id);
+      } catch {
+        return;
+      }
+      uiState.selectedCustomerId = null;
+      uiState.activeSheet = null;
+      uiState.screen = 'list';
+      showUndoToast(t(lang, 'undo_toast_book'));
+      renderApp();
+    });
+  });
+  const addBookForm = root.querySelector('#form-add-book');
+  if (addBookForm) {
+    addBookForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = String(new FormData(addBookForm).get('name') || '').trim();
+      if (!name) return;
+      try {
+        appState = addBook(appState, { name });
+      } catch (err) {
+        if (err && err.code === 'PRO_LIMIT_REACHED') {
+          uiState.activeSheet = 'proGate';
+          renderApp();
+        }
+        return;
+      }
+      uiState.selectedCustomerId = null;
+      uiState.searchQuery = '';
+      uiState.riskFilter = 'Semua';
+      uiState.activeSheet = null;
+      uiState.screen = 'setup'; // fill in owner / phone / due days for the new warung
+      renderApp();
+    });
+  }
+  const booksProGateBtn = root.querySelector('#btn-books-pro-gate');
+  if (booksProGateBtn) {
+    booksProGateBtn.addEventListener('click', () => {
+      uiState.billingNotice = '';
+      uiState.activeSheet = 'proGate';
       renderApp();
     });
   }
@@ -1970,7 +2117,7 @@ function bindEvents(selectedCustomer, lang) {
     mergeForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const targetId = String(new FormData(mergeForm).get('targetId') || '');
-      const target = appState.customers.find((c) => c.id === targetId);
+      const target = wb().customers.find((c) => c.id === targetId);
       if (!target) return;
       if (!window.confirm(t(lang, 'sheet_merge_confirm', { sumber: selectedCustomer.name, tujuan: target.name }))) return;
       appState = mergeCustomers(appState, selectedCustomer.id, targetId);
@@ -2254,7 +2401,7 @@ function bindEvents(selectedCustomer, lang) {
 
   // Demo data replaces every customer/debt/payment, so ask first when real data exists
   const confirmDemoLoad = () =>
-    appState.customers.length === 0 || window.confirm(t(lang, 'settings_demo_confirm'));
+    wb().customers.length === 0 || window.confirm(t(lang, 'settings_demo_confirm'));
 
   const loadDemo6Btn = root.querySelector('#btn-load-demo-6');
   if (loadDemo6Btn) {
@@ -2308,7 +2455,7 @@ function bindEvents(selectedCustomer, lang) {
     importJsonInput.addEventListener('change', async (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
-      if (appState.customers.length > 0 && !window.confirm(t(lang, 'settings_import_confirm'))) {
+      if (wb().customers.length > 0 && !window.confirm(t(lang, 'settings_import_confirm'))) {
         e.target.value = '';
         return;
       }
@@ -2407,7 +2554,7 @@ function bindEvents(selectedCustomer, lang) {
         date: fd.get('date')
       });
       uiState.activeSheet = null;
-      const newest = isSupplierBook() ? null : appState.payments[appState.payments.length - 1];
+      const newest = isSupplierBook() ? null : wb().payments[wb().payments.length - 1];
       uiState.lastPaymentId = newest ? newest.id : null;
       showUndoToast(t(lang, 'undo_toast_payment'));
       renderApp();
