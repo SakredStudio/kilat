@@ -138,5 +138,7 @@
   "purchase_cancelled": "Purchase cancelled.",
   "purchase_failed": "Purchase did not complete. Please try again.",
   "no_purchase_found": "No Kilat Pro purchase found on this Google account.",
-  "pro_gate_desc_buy": "The free tier supports up to 25 customers. Kilat Pro: unlimited customers, CSV export, watermark-free summary cards. One-time payment, yours forever."
+  "pro_gate_desc_buy": "The free tier supports up to 25 customers. Kilat Pro: unlimited customers, CSV export, watermark-free summary cards. One-time payment, yours forever.",
+  "settings_language": "App language",
+  "settings_language_note": "WhatsApp reminder texts stay in Bahasa Indonesia for your customers."
 }

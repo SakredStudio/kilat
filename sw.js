@@ -1,7 +1,7 @@
 // Kilat Service Worker — Cache-first offline asset shell
 // Cache-first shell: installed phones only pick up a new release when this name changes.
 // BUMP THIS ON EVERY DEPLOY (v2 = 2026-10-24 pre-launch review).
-const CACHE_NAME = 'kilat-shell-v2';
+const CACHE_NAME = 'kilat-shell-v3';
 
 const PRECACHE_ASSETS = [
   './',

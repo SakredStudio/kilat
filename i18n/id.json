@@ -138,5 +138,7 @@
   "purchase_cancelled": "Pembelian dibatalkan.",
   "purchase_failed": "Pembelian belum selesai. Coba lagi.",
   "no_purchase_found": "Tidak ada pembelian Kilat Pro di akun Google ini.",
-  "pro_gate_desc_buy": "Versi gratis mendukung hingga 25 pelanggan. Kilat Pro: pelanggan tanpa batas, ekspor CSV, kartu ringkasan tanpa watermark. Sekali bayar, berlaku selamanya."
+  "pro_gate_desc_buy": "Versi gratis mendukung hingga 25 pelanggan. Kilat Pro: pelanggan tanpa batas, ekspor CSV, kartu ringkasan tanpa watermark. Sekali bayar, berlaku selamanya.",
+  "settings_language": "Bahasa aplikasi",
+  "settings_language_note": "Pesan pengingat WhatsApp tetap dalam Bahasa Indonesia untuk pelanggan."
 }

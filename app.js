@@ -53,6 +53,11 @@ let uiState = {
   proPrice: PRO_PRICE_FALLBACK
 };
 
+function riskLabel(lang, risk) {
+  const key = risk === 'Tinggi' ? 'risk_high' : risk === 'Sedang' ? 'risk_medium' : 'risk_low';
+  return t(lang, key);
+}
+
 function escapeHtml(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;')
@@ -269,7 +274,7 @@ function renderCustomerListScreen(lang, ledger) {
                   const initials = avatarInitials(c.name);
                   const avStyle = avatarStyles[c.risk] || avatarStyles.Rendah;
                   const badgeClass = c.isPaid ? 'risk-Lunas' : `risk-${c.risk}`;
-                  const badgeLabel = c.isPaid ? t(lang, 'risk_paid') : c.risk;
+                  const badgeLabel = c.isPaid ? t(lang, 'risk_paid') : riskLabel(lang, c.risk);
                   const amountColor =
                     c.risk === 'Tinggi'
                       ? 'var(--red)'
@@ -319,7 +324,7 @@ function renderCustomerDetailScreen(lang, customer) {
     return renderCustomerListScreen(lang, computeWarungLedger(appState));
   }
   const badgeClass = customer.isPaid ? 'risk-Lunas' : `risk-${customer.risk}`;
-  const badgeLabel = customer.isPaid ? t(lang, 'risk_paid') : customer.risk;
+  const badgeLabel = customer.isPaid ? t(lang, 'risk_paid') : riskLabel(lang, customer.risk);
   const amountColor =
     customer.risk === 'Tinggi'
       ? 'var(--red)'
@@ -718,6 +723,13 @@ function renderSettingsScreen(lang) {
               <option value="tegas" ${s.tone === 'tegas' ? 'selected' : ''}>${escapeHtml(t(lang, 'tone_tegas_label'))}</option>
             </select>
           </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:14px; font-weight:600; color:var(--text);">${escapeHtml(t(lang, 'settings_language'))}</span>
+            <button type="button" id="btn-toggle-lang" class="btn-secondary" style="width:auto; min-width:96px;" aria-label="${escapeHtml(t(lang, 'settings_language'))}">
+              ${lang === 'en' ? '🇮🇩 Bahasa' : '🇬🇧 English'}
+            </button>
+          </div>
+          <div style="font-size:12px; color:var(--text3); margin-top:-4px;">${escapeHtml(t(lang, 'settings_language_note'))}</div>
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:14px; font-weight:600; color:var(--text);">${escapeHtml(t(lang, 'settings_dark_mode'))}</span>
             <button type="button" id="btn-toggle-dark" class="btn-secondary" style="width:auto; min-width:96px;" aria-pressed="${s.darkMode ? 'true' : 'false'}">
@@ -1262,6 +1274,14 @@ function bindEvents(selectedCustomer, lang) {
   if (defaultToneSelect) {
     defaultToneSelect.addEventListener('change', (e) => {
       appState = updateSettings(appState, { tone: e.target.value });
+      renderApp();
+    });
+  }
+
+  const toggleLangBtn = root.querySelector('#btn-toggle-lang');
+  if (toggleLangBtn) {
+    toggleLangBtn.addEventListener('click', () => {
+      appState = updateSettings(appState, { lang: appState.settings.lang === 'en' ? 'id' : 'en' });
       renderApp();
     });
   }
