@@ -17,7 +17,12 @@ import {
 } from '../lib/cloud.js';
 import { createInitialState, addCustomer, exportBackupJson, parseBackup, migrate } from '../lib/store.js';
 import { activeBook } from '../lib/books.js';
-import { handleRequest, isRateLimited, MAX_BODY_BYTES } from '../../worker/src/index.js';
+import { existsSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+// The worker lives outside app/ (monorepo only); the deploy mirror ships app/ alone, so skip there.
+const WORKER_PATH = fileURLToPath(new URL('../../worker/src/index.js', import.meta.url));
+const worker = existsSync(WORKER_PATH) ? await import(pathToFileURL(WORKER_PATH).href) : null;
+const { handleRequest, isRateLimited, MAX_BODY_BYTES } = worker || {};
 
 const st = { getItem: () => null, setItem() {} };
 
@@ -55,9 +60,10 @@ function fakeD1() {
   };
 }
 
-test('cloud: not configured by default; vault ids are 32 hex; passphrase rules', () => {
-  assert.equal(CLOUD_URL, '');
-  assert.equal(isCloudConfigured(), false);
+test('cloud: configured for the deployed worker; empty URL means not configured; vault ids are 32 hex; passphrase rules', () => {
+  assert.equal(CLOUD_URL, 'https://kilat-vault.mihir86-mp.workers.dev');
+  assert.equal(isCloudConfigured(), true);
+  assert.equal(isCloudConfigured(''), false);
   assert.equal(isCloudConfigured('https://kilat-vault.example.workers.dev'), true);
   assert.equal(PBKDF2_ITERATIONS, 200000);
   const id = newVaultId();
@@ -98,7 +104,7 @@ test('cloud: encrypt -> decrypt round trip restores the full backup; wrong passp
 
 test('cloud: upload/download refuse when not configured and talk to the vault URL when configured', async () => {
   const id = newVaultId();
-  await assert.rejects(() => uploadVault(id, { salt: 'a', iv: 'b', data: 'c' }), (err) => err.code === 'NOT_CONFIGURED');
+  await assert.rejects(() => uploadVault(id, { salt: 'a', iv: 'b', data: 'c' }, { baseUrl: '' }), (err) => err.code === 'NOT_CONFIGURED');
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url, method: init.method, body: init.body });
@@ -136,7 +142,7 @@ test('cloud: debouncer coalesces bursts of changes into one backup after the del
   assert.equal(d.pending(), false);
 });
 
-test('worker: PUT/GET/DELETE round trip with a fake D1, validation, size cap, CORS and rate limit', async () => {
+test('worker: PUT/GET/DELETE round trip with a fake D1, validation, size cap, CORS and rate limit', { skip: !worker && 'worker source not present (deploy mirror)' }, async () => {
   const DB = fakeD1();
   const env = { DB, ALLOWED_ORIGIN: 'https://sakredstudio.github.io' };
   const map = new Map();
