@@ -1,7 +1,7 @@
 // Kilat — Main Application Controller (P0–P5)
 import { registerTranslations, t } from './lib/i18n.js';
 import { isPlayBillingAvailable, getProPrice, hasProPurchase, buyPro, PRO_PRICE_FALLBACK } from './lib/billing.js';
-import { rp, avatarInitials, formatDateId } from './lib/format.js';
+import { setDateLang, rp, avatarInitials, formatDateId } from './lib/format.js';
 import { formatLocalPhone as fmtPhone } from './lib/phone.js';
 import {
   loadState,
@@ -1941,6 +1941,7 @@ export function renderApp() {
   applyTheme();
 
   const lang = appState.settings.lang;
+  setDateLang(lang);
   const ledger = ledgerFor();
   const selectedCustomer = ledger.customers.find((c) => c.id === uiState.selectedCustomerId) || null;
 
