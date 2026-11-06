@@ -237,6 +237,18 @@ button {
   text-decoration: none;
 }
 
+/* Discreet text link (Pro sheet: "Punya kode peninjau?"). Keeps the 44px tap target. */
+.link-quiet {
+  background: none;
+  border: none;
+  padding: 0 8px;
+  align-self: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text3);
+  text-decoration: underline;
+}
+
 .btn-wa {
   background: var(--wa-dark);
   color: #fff;

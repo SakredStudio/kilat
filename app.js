@@ -1,6 +1,7 @@
 // Bonrapi — Main Application Controller (P0–P5)
 import { registerTranslations, t } from './lib/i18n.js';
 import { isPlayBillingAvailable, getProPrice, hasProPurchase, buyPro, PRO_PRICE_FALLBACK } from './lib/billing.js';
+import { isReviewerCode } from './lib/reviewer.js';
 import { setDateLang, rp, avatarInitials, formatDateId } from './lib/format.js';
 import { formatLocalPhone as fmtPhone } from './lib/phone.js';
 import {
@@ -22,6 +23,8 @@ import {
   seedDemoData,
   exportBackupJson,
   parseBackup,
+  keepDeviceAccess,
+  isProActive,
   exportCsv,
   addDaysIsoDate,
   logReminder,
@@ -86,6 +89,8 @@ let uiState = {
   billingAvailable: false,
   billingBusy: false,
   billingNotice: '',
+  reviewerEntry: false, // Pro sheet: reviewer-code input revealed
+  reviewerBusy: false,
   proPrice: PRO_PRICE_FALLBACK,
   broadcast: { index: 0, sentIds: [], tone: 'sopan' },
   lastPaymentId: null, // payment just recorded -> "Kirim bukti" banner on detail
@@ -120,7 +125,7 @@ function askPassphrase(lang) {
 /** Encrypt the full backup (all books, no photos) and PUT it to the vault. */
 async function runCloudBackup(lang, { silent = false } = {}) {
   const cloud = appState.settings.cloud;
-  if (!isCloudConfigured() || !appState.settings.isPro || !cloud.vaultId) return false;
+  if (!isCloudConfigured() || !isProActive(appState) || !cloud.vaultId) return false;
   const passphrase = silent ? cloudPassphrase : askPassphrase(lang);
   if (!passphrase) return false;
   uiState.cloudBusy = true;
@@ -933,7 +938,7 @@ function renderReminderScreen(lang, customer) {
 }
 
 function hasCustomTemplate() {
-  return Boolean(appState.settings.isPro && String(appState.settings.customTemplate || '').trim());
+  return Boolean(isProActive(appState) && String(appState.settings.customTemplate || '').trim());
 }
 
 function toneOptions(lang) {
@@ -1393,10 +1398,10 @@ function renderSettingsScreen(lang) {
             ${escapeHtml(t(lang, 'settings_pro_title'))}
           </div>
           <div style="font-size:13px; color:var(--text);">
-            ${escapeHtml(s.isPro ? t(lang, 'settings_pro_status_active') : t(lang, 'settings_pro_status_free'))}
+            ${escapeHtml(isProActive(appState) ? t(lang, 'settings_pro_status_active') : t(lang, 'settings_pro_status_free'))}
           </div>
           ${
-            s.isPro
+            isProActive(appState)
               ? ''
               : `<div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, uiState.billingAvailable ? 'pro_gate_desc_buy' : 'pro_gate_desc'))}</div>
                  <button type="button" id="btn-open-pro-gate" class="btn-primary">${brandMark()} ${escapeHtml(
@@ -1414,7 +1419,7 @@ function renderSettingsScreen(lang) {
           ${
             !isCloudConfigured()
               ? `<div style="font-size:13px; font-weight:600; color:var(--text2); background:var(--bg2); border-radius:var(--radius-sm); padding:10px 12px;">${escapeHtml(t(lang, 'settings_cloud_unavailable'))}</div>`
-              : !s.isPro
+              : !isProActive(appState)
                 ? `<button type="button" id="btn-cloud-pro-gate" class="btn-secondary">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'settings_cloud_pro_hint'))}</button>`
                 : s.cloud.vaultId
                   ? `
@@ -1491,7 +1496,7 @@ function renderSettingsScreen(lang) {
           </div>
           <div style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_template_desc'))}</div>
           ${
-            s.isPro
+            isProActive(appState)
               ? `
                 <div style="display:flex; gap:6px; flex-wrap:wrap;">
                   ${['{nama}', '{jumlah}', '{hari}', '{warung}', '{tanggal}']
@@ -1751,9 +1756,9 @@ function renderBookSwitcherSheet(lang) {
                  </div>
                </form>`
             : `<div style="border-top:1px solid var(--border); padding-top:12px; font-size:13px; color:var(--text3); line-height:1.5;">
-                 ${escapeHtml(appState.settings.isPro ? t(lang, 'books_limit_pro', { limit }) : t(lang, 'books_limit_free'))}
+                 ${escapeHtml(isProActive(appState) ? t(lang, 'books_limit_pro', { limit }) : t(lang, 'books_limit_free'))}
                </div>
-               ${appState.settings.isPro ? '' : `<button type="button" id="btn-books-pro-gate" class="btn-secondary">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`}`
+               ${isProActive(appState) ? '' : `<button type="button" id="btn-books-pro-gate" class="btn-secondary">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`}`
         }
         <button type="button" id="btn-cancel-sheet" class="btn-secondary">${escapeHtml(t(lang, 'btn_close'))}</button>
       </div>
@@ -1877,6 +1882,7 @@ function renderRecordPaySheet(lang, customer) {
 }
 
 function renderProGateSheet(lang) {
+  const proActive = isProActive(appState);
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
       <div class="sheet-panel">
@@ -1890,16 +1896,30 @@ function renderProGateSheet(lang) {
         ${uiState.billingNotice ? `<p style="font-size:14px; font-weight:700; color:var(--text);">${escapeHtml(uiState.billingNotice)}</p>` : ''}
         <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
           ${
-            appState.settings.isPro
+            proActive
               ? ''
               : uiState.billingAvailable
                 ? `<button type="button" id="btn-buy-pro" class="btn-primary" ${uiState.billingBusy ? 'disabled' : ''}>${brandMark()} ${escapeHtml(t(lang, 'pro_buy_btn', { price: uiState.proPrice }))}</button>
                    <button type="button" id="btn-restore-pro" class="btn-secondary" ${uiState.billingBusy ? 'disabled' : ''}>${escapeHtml(t(lang, 'pro_restore_btn'))}</button>`
                 : `<div class="btn-secondary" aria-disabled="true" style="opacity:0.7; cursor:default;">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'pro_gate_coming_soon'))}</div>`
           }
-          <button type="button" id="btn-cancel-sheet" class="${appState.settings.isPro || uiState.billingAvailable ? 'btn-secondary' : 'btn-primary'}">
-            ${escapeHtml(t(lang, appState.settings.isPro ? 'btn_close' : 'pro_gate_close_btn'))}
+          <button type="button" id="btn-cancel-sheet" class="${proActive || uiState.billingAvailable ? 'btn-secondary' : 'btn-primary'}">
+            ${escapeHtml(t(lang, proActive ? 'btn_close' : 'pro_gate_close_btn'))}
           </button>
+          ${
+            proActive
+              ? ''
+              : uiState.reviewerEntry
+                ? `<form id="form-reviewer-code" style="display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--border); padding-top:12px;">
+                     <label class="field-label" for="reviewer-code-input">${escapeHtml(t(lang, 'reviewer_code_label'))}</label>
+                     <div style="display:flex; gap:8px;">
+                       <input id="reviewer-code-input" name="code" class="field-input" type="text" required maxlength="40"
+                         autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" />
+                       <button type="submit" class="btn-primary" style="width:auto; white-space:nowrap;" ${uiState.reviewerBusy ? 'disabled' : ''}>${escapeHtml(t(lang, 'reviewer_code_submit'))}</button>
+                     </div>
+                   </form>`
+                : `<button type="button" id="btn-reviewer-code" class="link-quiet">${escapeHtml(t(lang, 'reviewer_code_link'))}</button>`
+          }
         </div>
       </div>
     </div>
@@ -2486,9 +2506,10 @@ function bindEvents(selectedCustomer, lang) {
             return;
           }
           cloudPassphrase = passphrase;
+          const restored = keepDeviceAccess(state, appState);
           appState = saveState({
-            ...state,
-            settings: { ...state.settings, cloud: { vaultId, autoBackup: false, lastBackupAt: payload.updatedAt || null } }
+            ...restored,
+            settings: { ...restored.settings, cloud: { vaultId, autoBackup: false, lastBackupAt: payload.updatedAt || null } }
           });
           uiState.selectedCustomerId = null;
           uiState.cloudNotice = t(lang, 'cloud_restore_done');
@@ -2869,7 +2890,7 @@ function bindEvents(selectedCustomer, lang) {
       try {
         const text = await file.text();
         const { state, photos } = parseBackup(text);
-        appState = saveState(state);
+        appState = saveState(keepDeviceAccess(state, appState));
         if (Object.keys(photos).length > 0) {
           await importPhotos(photos);
           uiState.photos = { ...uiState.photos, ...photos };
@@ -3013,6 +3034,7 @@ function bindEvents(selectedCustomer, lang) {
     cancelBtn.addEventListener('click', () => {
       uiState.activeSheet = null;
       uiState.pendingPhotoDataUrl = null;
+      uiState.reviewerEntry = false;
       renderApp();
     });
   }
@@ -3059,6 +3081,37 @@ function bindEvents(selectedCustomer, lang) {
         uiState.billingNotice = t(lang, 'no_purchase_found');
       }
       uiState.billingBusy = false;
+      renderApp();
+    });
+  }
+
+  // Reviewer access code (Play reviewers cannot buy): the link reveals an input in the Pro sheet;
+  // a matching code sets settings.reviewerAccess, which isProActive() honours on this device.
+  const reviewerCodeBtn = root.querySelector('#btn-reviewer-code');
+  if (reviewerCodeBtn) {
+    reviewerCodeBtn.addEventListener('click', () => {
+      uiState.reviewerEntry = true;
+      uiState.billingNotice = '';
+      renderApp();
+      const input = document.getElementById('reviewer-code-input');
+      if (input) input.focus();
+    });
+  }
+  const reviewerCodeForm = root.querySelector('#form-reviewer-code');
+  if (reviewerCodeForm) {
+    reviewerCodeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (uiState.reviewerBusy) return;
+      uiState.reviewerBusy = true;
+      const ok = await isReviewerCode(new FormData(reviewerCodeForm).get('code'));
+      uiState.reviewerBusy = false;
+      if (ok) {
+        appState = updateSettings(appState, { reviewerAccess: true });
+        uiState.reviewerEntry = false;
+        uiState.billingNotice = t(lang, 'reviewer_access_on');
+      } else {
+        uiState.billingNotice = t(lang, 'reviewer_code_mismatch');
+      }
       renderApp();
     });
   }

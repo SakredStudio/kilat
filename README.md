@@ -61,7 +61,7 @@ Setiap modul murni di `lib/` punya berkas uji di `tests/`. `tests/acceptance.tes
              suppliers, supplierDebts, supplierPayments   // bentuk sama; supplier punya payPlan? {date, note}
              reminders: [{id, customerId, sentAt, tone, book: 'customer'|'supplier'}] } ],
   activeBookId,
-  settings: { tone, isPro, lang, darkMode, hasCompletedSetup, customTemplate,
+  settings: { tone, isPro, reviewerAccess, lang, darkMode, hasCompletedSetup, customTemplate,
               cloud: { vaultId, autoBackup, lastBackupAt } } }
 ```
 
@@ -72,7 +72,8 @@ Foto bon (`<debtId>`) dan QRIS (`qris:<bookId>`) ada di IndexedDB `kilat-photos`
 | Modul | Isi |
 |---|---|
 | `store.js` | persistensi, `migrate()` v1→v2, buku aktif, undo, seed, ekspor/impor, CSV, `onStateSaved` |
-| `books.js` | `activeBook()`, batas warung (gratis 1 / Pro 5) |
+| `books.js` | `activeBook()`, batas warung (gratis 1 / Pro 5), `isProActive()` = satu-satunya cek Pro (`isPro` **atau** `reviewerAccess`) |
+| `reviewer.js` | kode akses peninjau Google Play: hanya hash SHA-256 yang disimpan (kode asli tidak ada di repo); kode cocok → `settings.reviewerAccess` di perangkat itu saja, tidak ikut cadangan JSON/cloud |
 | `ledger.js` | saldo FIFO, risiko umur, jatuh tempo (`dueBuckets`), `bookView` |
 | `wa.js` | template 3 nada (+ varian `{tanggal}`), template supplier, baris `— Bonrapi`, tautan `wa.me` |
 | `broadcast.js` | antrean pengingat beruntun, jurnal terakhir diingatkan |
