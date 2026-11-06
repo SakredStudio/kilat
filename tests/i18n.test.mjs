@@ -27,7 +27,8 @@ test('i18n: registerTranslations and t() interpolate variables in Bahasa Indones
   registerTranslations('en', enJson);
   assert.equal(DEFAULT_LANG, 'id');
   assert.deepEqual(SUPPORTED_LANGS, ['id', 'en']);
-  assert.equal(t('id', 'app_name'), 'Kilat');
+  assert.equal(t('id', 'app_name'), 'Bonrapi');
+  assert.equal(t('en', 'app_name'), 'Bonrapi');
   assert.equal(t('id', 'reminder_overdue_days', { hari: 21 }), 'Menunggak 21 hari');
   assert.equal(t('en', 'reminder_overdue_days', { hari: 21 }), 'Overdue 21 days');
   assert.equal(interpolate('Halo {nama}, tagihan {jumlah}', { nama: 'Pak Budi', jumlah: 'Rp350.000' }), 'Halo Pak Budi, tagihan Rp350.000');

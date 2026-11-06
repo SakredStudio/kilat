@@ -42,7 +42,7 @@ test('receipt-card: partial payment model has amount paid, remaining, lunas=fals
   assert.ok(m.shareText.includes('Sisa catatan: *Rp 250.000*'));
   assert.ok(m.shareText.includes('Cicilan 1'));
   assert.ok(m.shareText.endsWith(SHARE_LINE));
-  assert.ok(!/Kilat (menerima|mentransfer)/i.test(m.shareText));
+  assert.ok(!/(?:Bonrapi|Kilat) (menerima|mentransfer)/i.test(m.shareText));
 });
 
 test('receipt-card: remaining is computed as of that payment; later payments give lunas; Pro drops watermark', () => {

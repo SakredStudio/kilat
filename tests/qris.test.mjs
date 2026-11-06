@@ -27,7 +27,7 @@ test('qris: payload builder decodes the dataURL, names the file after the warung
   assert.deepEqual(Array.from(p.bytes.slice(0, 8)), [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'PNG magic bytes');
   assert.ok(p.text.endsWith(SHARE_LINE));
   assert.ok(p.text.includes(QRIS_LINE));
-  assert.ok(!/Kilat (menerima|memproses|mentransfer)/i.test(p.text));
+  assert.ok(!/(?:Bonrapi|Kilat) (menerima|memproses|mentransfer)/i.test(p.text));
   assert.throws(() => buildQrisSharePayload({ message: 'x', qrisDataUrl: '' }), /missing/);
   assert.throws(() => dataUrlToBytes('data:text/plain,hi'), /dataURL/);
   assert.equal(dataUrlToBytes('data:image/jpeg;base64,/9j/').mime, 'image/jpeg');

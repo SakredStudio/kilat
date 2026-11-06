@@ -11,7 +11,7 @@ import {
 
 test('wa: builds all 3 tones (sopan, singkat, tegas) with variables and mandatory share line', () => {
   assert.equal(APP_LINK, 'https://kilat.sakredstudio.ca');
-  assert.equal(SHARE_LINE, '— Kilat · https://kilat.sakredstudio.ca');
+  assert.equal(SHARE_LINE, '— Bonrapi · https://kilat.sakredstudio.ca');
   assert.ok(REMINDER_TEMPLATES.sopan);
   assert.ok(REMINDER_TEMPLATES.singkat);
   assert.ok(REMINDER_TEMPLATES.tegas);
@@ -28,7 +28,7 @@ test('wa: builds all 3 tones (sopan, singkat, tegas) with variables and mandator
     assert.ok(msg.includes('Rp 350.000'), `${tone} should include formatted IDR amount`);
     assert.ok(msg.includes('21'), `${tone} should include overdue days`);
     assert.ok(msg.includes('Warung Bu Siti'), `${tone} should include warung name`);
-    assert.ok(msg.endsWith('— Kilat · https://kilat.sakredstudio.ca'), `${tone} should end with share line`);
+    assert.ok(msg.endsWith('— Bonrapi · https://kilat.sakredstudio.ca'), `${tone} should end with share line`);
   }
 });
 
@@ -50,4 +50,17 @@ test('wa: link() normalizes phone to 62XXXXXXXXXX and URL-encodes emojis, asteri
 
   // Ensure share line is not duplicated if already present
   assert.equal(ensureShareLine(msg), msg);
+});
+
+test('wa: a message still ending with the pre-rename "— Kilat" line is re-signed once as Bonrapi', () => {
+  const legacy = '— Kilat · https://kilat.sakredstudio.ca';
+  const out = ensureShareLine(`Halo Pak Budi
+
+${legacy}`);
+  assert.equal(out, `Halo Pak Budi
+
+${SHARE_LINE}`);
+  assert.ok(!out.includes('Kilat ·'));
+  assert.equal(ensureShareLine(legacy), SHARE_LINE);
+  assert.ok(!SHARE_LINE.includes('Kilat'));
 });

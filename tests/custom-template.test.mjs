@@ -30,7 +30,7 @@ test('custom-template: renders every variable and always ends with exactly one s
   assert.equal(alreadyThere.split(SHARE_LINE).length - 1, 1, 'not duplicated when already last');
 
   // The wa.me link enforces it as well, independent of the template
-  const url = link('0812', 'Halo tanpa baris kilat');
+  const url = link('0812', 'Halo tanpa baris tanda');
   assert.ok(decodeURIComponent(url.split('?text=')[1]).endsWith(SHARE_LINE));
 
   // Unknown placeholders are left alone, {tanggal} without a date becomes '-'

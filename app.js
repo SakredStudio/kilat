@@ -1,4 +1,4 @@
-// Kilat — Main Application Controller (P0–P5)
+// Bonrapi — Main Application Controller (P0–P5)
 import { registerTranslations, t } from './lib/i18n.js';
 import { isPlayBillingAvailable, getProPrice, hasProPurchase, buyPro, PRO_PRICE_FALLBACK } from './lib/billing.js';
 import { setDateLang, rp, avatarInitials, formatDateId } from './lib/format.js';
@@ -60,6 +60,7 @@ import {
   shareOrDownloadCard
 } from './lib/share-card.js';
 import { buildReceiptModel, drawReceiptToCanvas, shareOrDownloadReceipt } from './lib/receipt-card.js';
+import { loadBrandMark } from './lib/canvas-share.js';
 import { resizeImageFile, putPhoto, deletePhoto, getAllPhotos, clearPhotos, importPhotos, PHOTO_MAX_PX, QRIS_MAX_PX } from './lib/photos.js';
 import { qrisKey, withQrisLine, buildQrisSharePayload, shareReminderWithQris } from './lib/qris.js';
 import { computeStats } from './lib/stats.js';
@@ -242,6 +243,14 @@ function showUndoToast(message) {
     }
     renderApp();
   }, 5000);
+}
+
+/**
+ * Inline Bonrapi mark (cream notebook + tick). The plain mark suits teal/dark surfaces;
+ * `tile` puts it on its own teal ground so it stays visible on light cards and buttons.
+ */
+function brandMark({ tile = false } = {}) {
+  return `<img class="brand-mark${tile ? ' brand-mark--tile' : ''}" src="./icons/mark.png" alt="" aria-hidden="true" />`;
 }
 
 function triggerFileDownload(content, filename, mimeType = 'application/json') {
@@ -1090,7 +1099,7 @@ function renderShareCardScreen(lang) {
               </div>
             </div>
             <div style="background:rgba(45,212,191,0.18); border:1px solid rgba(45,212,191,0.35); border-radius:99px; padding:4px 10px; font-size:10px; font-weight:700; color:#5EEAD4;">
-              ⚡ ${escapeHtml(t(lang, 'card_report_badge'))}
+              ${brandMark()} ${escapeHtml(t(lang, 'card_report_badge'))}
             </div>
           </div>
 
@@ -1378,7 +1387,7 @@ function renderSettingsScreen(lang) {
           </div>
         </div>
 
-        <!-- Kilat Pro Status -->
+        <!-- Bonrapi Pro Status -->
         <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:10px;">
           <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
             ${escapeHtml(t(lang, 'settings_pro_title'))}
@@ -1390,7 +1399,7 @@ function renderSettingsScreen(lang) {
             s.isPro
               ? ''
               : `<div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, uiState.billingAvailable ? 'pro_gate_desc_buy' : 'pro_gate_desc'))}</div>
-                 <button type="button" id="btn-open-pro-gate" class="btn-primary">⚡ ${escapeHtml(
+                 <button type="button" id="btn-open-pro-gate" class="btn-primary">${brandMark()} ${escapeHtml(
                    uiState.billingAvailable ? t(lang, 'pro_buy_btn', { price: uiState.proPrice }) : t(lang, 'pro_gate_coming_soon')
                  )}</button>`
           }
@@ -1406,7 +1415,7 @@ function renderSettingsScreen(lang) {
             !isCloudConfigured()
               ? `<div style="font-size:13px; font-weight:600; color:var(--text2); background:var(--bg2); border-radius:var(--radius-sm); padding:10px 12px;">${escapeHtml(t(lang, 'settings_cloud_unavailable'))}</div>`
               : !s.isPro
-                ? `<button type="button" id="btn-cloud-pro-gate" class="btn-secondary">⚡ ${escapeHtml(t(lang, 'settings_cloud_pro_hint'))}</button>`
+                ? `<button type="button" id="btn-cloud-pro-gate" class="btn-secondary">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'settings_cloud_pro_hint'))}</button>`
                 : s.cloud.vaultId
                   ? `
                     <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'settings_cloud_vault_code'))}</div>
@@ -1503,7 +1512,7 @@ function renderSettingsScreen(lang) {
                   <button type="button" id="btn-template-save" class="btn-primary" style="flex:1;">${escapeHtml(t(lang, 'settings_template_save'))}</button>
                 </div>
                 <div id="settings-template-status" style="font-size:12px; color:var(--text3); min-height:16px;">${escapeHtml(s.customTemplate ? t(lang, 'settings_template_active') : t(lang, 'settings_template_empty_hint'))}</div>`
-              : `<button type="button" id="btn-template-pro-gate" class="btn-secondary">⚡ ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`
+              : `<button type="button" id="btn-template-pro-gate" class="btn-secondary">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`
           }
         </div>
 
@@ -1744,7 +1753,7 @@ function renderBookSwitcherSheet(lang) {
             : `<div style="border-top:1px solid var(--border); padding-top:12px; font-size:13px; color:var(--text3); line-height:1.5;">
                  ${escapeHtml(appState.settings.isPro ? t(lang, 'books_limit_pro', { limit }) : t(lang, 'books_limit_free'))}
                </div>
-               ${appState.settings.isPro ? '' : `<button type="button" id="btn-books-pro-gate" class="btn-secondary">⚡ ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`}`
+               ${appState.settings.isPro ? '' : `<button type="button" id="btn-books-pro-gate" class="btn-secondary">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'settings_template_pro_hint'))}</button>`}`
         }
         <button type="button" id="btn-cancel-sheet" class="btn-secondary">${escapeHtml(t(lang, 'btn_close'))}</button>
       </div>
@@ -1871,7 +1880,7 @@ function renderProGateSheet(lang) {
   return `
     <div class="sheet-backdrop" id="sheet-backdrop">
       <div class="sheet-panel">
-        <div style="font-size:28px;">⚡</div>
+        <div style="font-size:36px; line-height:1;">${brandMark({ tile: true })}</div>
         <h2 style="font-family:var(--font-display); font-size:21px; color:var(--text);">
           ${escapeHtml(t(lang, uiState.billingAvailable ? 'pro_gate_title_buy' : 'pro_gate_title'))}
         </h2>
@@ -1884,9 +1893,9 @@ function renderProGateSheet(lang) {
             appState.settings.isPro
               ? ''
               : uiState.billingAvailable
-                ? `<button type="button" id="btn-buy-pro" class="btn-primary" ${uiState.billingBusy ? 'disabled' : ''}>⚡ ${escapeHtml(t(lang, 'pro_buy_btn', { price: uiState.proPrice }))}</button>
+                ? `<button type="button" id="btn-buy-pro" class="btn-primary" ${uiState.billingBusy ? 'disabled' : ''}>${brandMark()} ${escapeHtml(t(lang, 'pro_buy_btn', { price: uiState.proPrice }))}</button>
                    <button type="button" id="btn-restore-pro" class="btn-secondary" ${uiState.billingBusy ? 'disabled' : ''}>${escapeHtml(t(lang, 'pro_restore_btn'))}</button>`
-                : `<div class="btn-secondary" aria-disabled="true" style="opacity:0.7; cursor:default;">⚡ ${escapeHtml(t(lang, 'pro_gate_coming_soon'))}</div>`
+                : `<div class="btn-secondary" aria-disabled="true" style="opacity:0.7; cursor:default;">${brandMark({ tile: true })} ${escapeHtml(t(lang, 'pro_gate_coming_soon'))}</div>`
           }
           <button type="button" id="btn-cancel-sheet" class="${appState.settings.isPro || uiState.billingAvailable ? 'btn-secondary' : 'btn-primary'}">
             ${escapeHtml(t(lang, appState.settings.isPro ? 'btn_close' : 'pro_gate_close_btn'))}
@@ -2844,7 +2853,7 @@ function bindEvents(selectedCustomer, lang) {
   if (exportJsonBtn) {
     exportJsonBtn.addEventListener('click', () => {
       const json = exportBackupJson(appState, { photos: uiState.photos });
-      triggerFileDownload(json, 'kilat-cadangan.json', 'application/json');
+      triggerFileDownload(json, 'bonrapi-cadangan.json', 'application/json');
     });
   }
 
@@ -2881,7 +2890,7 @@ function bindEvents(selectedCustomer, lang) {
     exportCsvBtn.addEventListener('click', () => {
       try {
         const csv = exportCsv(appState);
-        triggerFileDownload(csv, 'kilat-laporan-piutang.csv', 'text/csv;charset=utf-8');
+        triggerFileDownload(csv, 'bonrapi-laporan-piutang.csv', 'text/csv;charset=utf-8');
       } catch (err) {
         if (err && err.code === 'PRO_REQUIRED') {
           uiState.activeSheet = 'proGate';
@@ -3121,6 +3130,11 @@ export async function initApp() {
   saveState(appState);
   renderApp();
 
+  // Brand mark for the canvas summary card badge (optional, never blocks; redraw once it is in)
+  loadBrandMark().then((img) => {
+    if (img && uiState.screen === 'card') renderApp();
+  });
+
   // Pro+ auto cloud backup: every saved change schedules one encrypted upload 30 s later
   onStateSaved(() => {
     if (appState && appState.settings.cloud.autoBackup && appState.settings.cloud.vaultId) scheduleAutoBackup();
@@ -3154,6 +3168,6 @@ export async function initApp() {
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
-    initApp().catch((err) => console.error('Kilat init failed:', err));
+    initApp().catch((err) => console.error('Bonrapi init failed:', err));
   });
 }
