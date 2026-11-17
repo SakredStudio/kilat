@@ -17,7 +17,8 @@ import {
   BOOKS
 } from '../lib/store.js';
 import { computeWarungLedger, bookView } from '../lib/ledger.js';
-import { buildSupplierMessage, SHARE_LINE } from '../lib/wa.js';
+import { buildSupplierMessage, shareLineFor } from '../lib/wa.js';
+const SHARE_LINE = shareLineFor('supplier');
 import { latestReminderByCustomer } from '../lib/broadcast.js';
 
 function mem() {

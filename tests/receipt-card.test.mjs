@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, addCustomer, addDebt, addPayment, updateSettings } from '../lib/store.js';
 import { buildReceiptModel, drawReceiptToCanvas, RECEIPT_WIDTH, RECEIPT_HEIGHT } from '../lib/receipt-card.js';
-import { SHARE_LINE } from '../lib/wa.js';
-import { WATERMARK_TEXT } from '../lib/share-card.js';
+import { shareLineFor } from '../lib/wa.js';
+import { watermarkFor } from '../lib/share-card.js';
+const SHARE_LINE = shareLineFor('receipt');
+const WATERMARK_TEXT = watermarkFor('receipt');
 
 function mem() {
   const m = new Map();

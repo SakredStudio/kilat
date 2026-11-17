@@ -50,6 +50,19 @@ Setiap modul murni di `lib/` punya berkas uji di `tests/`. `tests/acceptance.tes
 - **QRIS** (`lib/qris.js`) — Pengaturan → unggah gambar QRIS statis warung (IndexedDB, kunci `qris:<bookId>`, maks. 1000 px, bisa dihapus). Layar pengingat pelanggan menampilkan sakelar **"+ Lampirkan QRIS"**: pratinjau menambah baris *"Bisa scan QRIS warung di gambar terlampir ya, pembayaran langsung ke warung 🙏"*, dan tombol kirim memakai **Web Share API** (teks + berkas gambar). Bila Web Share tidak tersedia: tautan `wa.me` teks dibuka seperti biasa, gambar diunduh ke HP, dan aplikasi menjelaskan *"kirim gambar ini di WhatsApp"*. Catatan jujur: PWA tidak bisa memasukkan gambar langsung ke `wa.me`, jadi fallback dua langkah ini adalah versi paling dekat yang bisa dilakukan. Tidak ada uang yang lewat Bonrapi.
 - **Cadangan cloud terenkripsi (Pro+)** (`lib/cloud.js`, `projects/kilat/worker/`) — opsional, **mati secara bawaan**. Di HP: PBKDF2 (200.000 iterasi, SHA-256) dari kata sandi + salt acak → kunci AES-GCM-256 → mengenkripsi seluruh JSON cadangan (semua warung; foto bon tidak ikut agar di bawah batas 1 MB). Pengenal satu-satunya adalah `vaultId` acak 16 byte (32 heks). Unggah/unduh via `fetch(CLOUD_URL + '/v1/vault/' + vaultId)` PUT/GET dengan `{salt, iv, data, updatedAt}` base64. `CLOUD_URL` di `lib/cloud.js` bernilai `''` = belum dikonfigurasi, dan UI menampilkan *"Belum tersedia"*. Pengaturan → *Cadangan cloud (Pro+)*: buat brankas (menampilkan kode brankas + aturan kata sandi), pulihkan di HP baru (kode + kata sandi), waktu cadangan terakhir, sakelar cadangan otomatis setelah perubahan (debounce 30 detik; kata sandi diminta sekali per sesi dan hanya disimpan di memori), putuskan brankas, hapus cadangan di cloud. Kata sandi tidak pernah disimpan atau dikirim. **Catatan jujur:** belum ada SKU langganan "Pro+" di Play Billing (`lib/billing.js` tidak disentuh); gerbangnya saat ini memakai `isPro`. Server (`worker/`) adalah Cloudflare Worker + D1 (`wrangler.toml` dengan binding `DB`, `schema.sql`, `src/index.js`: PUT/GET/DELETE, batas 1 MB, CORS untuk `https://sakredstudio.github.io`, 60 permintaan/menit per IP, tanpa auth selain id yang tidak bisa ditebak) dan **belum di-deploy**.
 
+### 1.3 — "every message brings a warung" (2026-11-17)
+- **Baris tanda tangan baru** (`lib/wa.js`) — setiap pesan diakhiri `— dicatat rapi dengan Bonrapi · https://bonrapi.sakredstudio.ca/<kode>`: `r` pengingat, `b` bukti, `s` supplier, `k` kartu ringkasan, `a` ajak warung, `q` poster, `w` banner web. Halaman tautan ada di `../link/` (Worker). Tanda tangan lama (`— Bonrapi · kilat…`, `— Kilat · …`) diganti, tidak pernah dobel. `ensureShareLine(msg, { surface, enabled })`; `link(phone, text, opts)` harus diberi surface yang sama.
+- **Pro bisa mematikan baris itu** (`settings.shareLine`, cek lewat `shareLineEnabled()` di `lib/books.js`). Versi gratis selalu menampilkannya.
+- **QR di bukti pembayaran gratis** (`lib/qr-data.js`, dibuat oleh `../tools/make-qr.py` dengan python-qrcode; `drawQr()` di `lib/canvas-share.js`), berlabel "Info Bonrapi · bukan untuk bayar". Bukti Pro tanpa QR.
+- **Poster kasir** (`lib/sign-card.js`) — Pengaturan → QRIS → *Buat poster kasir*: PNG A4 1240×1754 dengan nama warung + QRIS warung (atau tanda centang bila belum ada QRIS), dibagikan/diunduh untuk dicetak. Sengaja **tanpa QR Bonrapi** (di kasir, QR apa pun dikira QR bayar); kredit Bonrapi hanya teks di kaki poster.
+- **Pengingat lembut** (`lib/nudges.js`) — satu kartu di daftar pelanggan: *simpan file cadangan* (≥10 catatan, seminggu sekali, tidak muncul bila brankas cloud aktif) lalu *beri bintang* (hanya di aplikasi Play, ≥3 pembayaran selama ≥7 hari, "Nanti" = 30 hari, sekali beri bintang = selesai). Tanpa hadiah untuk rating (kebijakan Play).
+- **Penyimpanan dilindungi** — `navigator.storage.persist()` setelah toko diatur; status tampil di Pengaturan → Cadangan, bersama waktu file cadangan terakhir (`settings.lastExportAt`).
+- **Ajak warung lain + masukan** — Pengaturan: tautan `wa.me/?text=` (tanpa nomor) berisi ajakan dengan `/a`, e-mail masukan, tombol beri bintang (hanya di aplikasi Play).
+- **Banner kunjungan pertama di browser** — di layar Atur Toko, bila bukan aplikasi Play dan toko belum diatur: menjelaskan bahwa pesan datang dari pemilik warung dan Bonrapi bukan aplikasi pinjaman; tombol Play (`/go/w`) hanya di Android. Aplikasi Play dikenali dari referrer `android-app://com.sakredstudio.kilat` (disimpan di `sessionStorage`) atau Play Billing.
+- **Pratinjau tautan** — `index.html` punya tag Open Graph untuk pesan lama yang masih menunjuk ke sini.
+- Kartu ringkasan: peringatan bahwa kartu memuat nama pelanggan (kirim ke keluarga saja).
+- Pengaturan baru dimigrasi aman: `shareLine` (hanya `false` eksplisit yang mematikan), `lastExportAt`, `nudges { backupSnoozedAt, rate, rateSnoozedAt }`.
+
 ## Skema data (`localStorage` `kilat.v1`, `schemaVersion: 2`)
 
 ```
@@ -81,6 +94,9 @@ Foto bon (`<debtId>`) dan QRIS (`qris:<bookId>`) ada di IndexedDB `kilat-photos`
 | `photos.js` | IndexedDB foto bon + QRIS, pengecil gambar |
 | `stats.js` | statistik mingguan/bulanan |
 | `qris.js` | muatan berbagi teks + gambar QRIS |
+| `nudges.js` | 1.3: kartu "simpan cadangan" mingguan + permintaan rating sekali |
+| `sign-card.js` | 1.3: poster kasir A4 (QRIS warung + kredit teks Bonrapi) |
+| `qr-data.js` | 1.3: matriks QR untuk bukti (dibuat oleh `tools/make-qr.py`, jangan diedit) |
 | `cloud.js` | enkripsi cadangan + klien brankas |
 | `billing.js` | Play Billing Bonrapi Pro (tidak diubah) |
 | `i18n.js`, `format.js`, `phone.js` | bahasa, Rupiah/tanggal, normalisasi nomor |
@@ -93,7 +109,9 @@ Live at https://kilat.sakredstudio.ca/. The public repo `SakredStudio/kilat` is 
 git subtree push --prefix=projects/kilat/app https://github.com/SakredStudio/kilat.git main
 ```
 
-The workflow in `.github/workflows/deploy.yml` runs the tests and publishes the folder. Bump `CACHE_NAME` in `sw.js` first (v4 = v2/v3 feature release).
+The workflow in `.github/workflows/deploy.yml` runs the tests and publishes the folder. Bump `CACHE_NAME` in `sw.js` first (v4 = v2/v3 feature release; v11 = 1.3).
+
+**1.3 order matters:** deploy the link page first (`../link/README.md`: D1 table, then `npx wrangler deploy`) and check `https://bonrapi.sakredstudio.ca/r` loads, then push this folder. Otherwise new messages point at a host that does not exist yet. No new Play bundle is needed: the TWA loads this site.
 
 ### Worker (belum di-deploy)
 

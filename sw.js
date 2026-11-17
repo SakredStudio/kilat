@@ -1,9 +1,10 @@
 // Bonrapi Service Worker — Cache-first offline asset shell
 // Cache-first shell: installed phones only pick up a new release when this name changes.
 // BUMP THIS ON EVERY DEPLOY (v3 = language switch; v4 = v2/v3 feature release 2026-10-25;
-// v9 = Bonrapi rename + new icon set 2026-11-05; v10 = reviewer access code, lib/reviewer.js).
+// v9 = Bonrapi rename + new icon set 2026-11-05; v10 = reviewer access code, lib/reviewer.js;
+// v11 = 1.3 word-of-mouth release: link page footer, receipt QR, counter poster, nudges).
 // The 'kilat-' prefix is plumbing and stays.
-const CACHE_NAME = 'kilat-shell-v10';
+const CACHE_NAME = 'kilat-shell-v11';
 
 const PRECACHE_ASSETS = [
   './',
@@ -31,6 +32,9 @@ const PRECACHE_ASSETS = [
   './lib/stats.js',
   './lib/qris.js',
   './lib/cloud.js',
+  './lib/qr-data.js',
+  './lib/nudges.js',
+  './lib/sign-card.js',
   './fonts/fonts.css',
   './fonts/DMSans-400-latin.woff2',
   './fonts/DMSans-400-latin-ext.woff2',

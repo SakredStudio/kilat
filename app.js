@@ -53,10 +53,12 @@ import {
   deleteVault,
   createDebouncer
 } from './lib/cloud.js';
-import { bookLimit } from './lib/books.js';
+import { bookLimit, shareLineEnabled } from './lib/books.js';
 import { computeWarungLedger, filterCustomers } from './lib/ledger.js';
 import { buildBroadcastQueue, queueProgress, latestReminderByCustomer } from './lib/broadcast.js';
-import { buildReminderMessage, buildSupplierMessage, ensureShareLine, link as buildWaLink } from './lib/wa.js';
+import { buildReminderMessage, buildSupplierMessage, ensureShareLine, link as buildWaLink, playLink, inviteLink } from './lib/wa.js';
+import { activeNudge } from './lib/nudges.js';
+import { buildSignModel, drawSignToCanvas, shareOrDownloadSign } from './lib/sign-card.js';
 import {
   buildShareCardModel,
   drawShareCardToCanvas,
@@ -67,6 +69,10 @@ import { loadBrandMark } from './lib/canvas-share.js';
 import { resizeImageFile, putPhoto, deletePhoto, getAllPhotos, clearPhotos, importPhotos, PHOTO_MAX_PX, QRIS_MAX_PX } from './lib/photos.js';
 import { qrisKey, withQrisLine, buildQrisSharePayload, shareReminderWithQris } from './lib/qris.js';
 import { computeStats } from './lib/stats.js';
+
+export const APP_VERSION = '1.3.0';
+export const PLAY_LISTING_URL = 'https://play.google.com/store/apps/details?id=com.sakredstudio.kilat';
+export const FEEDBACK_EMAIL = 'sakredfamily@gmail.com';
 
 let appState = null;
 let undoTimer = null;
@@ -99,8 +105,41 @@ let uiState = {
   pendingPhotoDataUrl: null, // picked in the add-debt sheet, saved with the new debt
   photoViewerDebtId: null,
   book: 'customer', // 'customer' (piutang) | 'supplier' (hutang)
-  attachQris: false // reminder screen: "+ lampirkan QRIS" toggle
+  attachQris: false, // reminder screen: "+ lampirkan QRIS" toggle
+  inPlayApp: false, // running inside the Play-installed app (TWA), not a browser tab
+  storagePersisted: null, // navigator.storage.persist() result: true / false / null (unknown)
+  signImage: null // { src, img } decoded QRIS picture for the counter sign
 };
+
+/** Signature options for one message surface: free always signs, Pro may switch it off. */
+function shareOpts(surface) {
+  return { surface, enabled: shareLineEnabled(appState) };
+}
+/** The reminder screen serves both books: customers get 'reminder', suppliers 'supplier'. */
+function messageSurface() {
+  return isSupplierBook() ? 'supplier' : 'reminder';
+}
+
+/** Ask the browser to keep Bonrapi's storage when the phone runs low on space (Chrome decides silently). */
+async function requestPersistentStorage() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage || typeof navigator.storage.persist !== 'function') return null;
+    const already = typeof navigator.storage.persisted === 'function' ? await navigator.storage.persisted() : false;
+    return already || (await navigator.storage.persist());
+  } catch {
+    return null;
+  }
+}
+
+function saveBackupFile() {
+  const json = exportBackupJson(appState, { photos: uiState.photos });
+  triggerFileDownload(json, 'bonrapi-cadangan.json', 'application/json');
+  appState = updateSettings(appState, { lastExportAt: new Date().toISOString() });
+}
+
+function isAndroidBrowser() {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
+}
 
 // ---- Pro+ encrypted cloud backup (client side; passphrase lives only in memory for this session)
 let cloudPassphrase = null;
@@ -300,6 +339,7 @@ function renderSetupScreen(lang) {
         <h1 class="hero-title">${escapeHtml(t(lang, 'setup_title'))}</h1>
         <p class="hero-subtitle">${escapeHtml(t(lang, 'setup_subtitle'))}</p>
       </header>
+      ${renderWebVisitorBanner(lang)}
       <form id="setup-form" style="padding:18px 16px; display:flex; flex-direction:column; gap:14px; flex:1;">
         <div class="field-group">
           <label class="field-label" for="setup-warung-name">${escapeHtml(t(lang, 'setup_warung_name_label'))}</label>
@@ -357,6 +397,48 @@ function renderSetupScreen(lang) {
       </form>
     </div>
   `;
+}
+
+/**
+ * First visit in a browser tab (not the Play app), before setup: this is usually someone who
+ * tapped the link under a warung's reminder. Say what Bonrapi is before asking for a shop name.
+ */
+function renderWebVisitorBanner(lang) {
+  if (uiState.inPlayApp || appState.settings.hasCompletedSetup) return '';
+  return `
+    <div id="web-visitor-banner" style="margin:14px 16px 0; background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font-size:14px; font-weight:700; color:var(--text);">${escapeHtml(t(lang, 'web_banner_title'))}</div>
+      <div style="font-size:13px; color:var(--text2); line-height:1.5;">${escapeHtml(t(lang, 'web_banner_body'))}</div>
+      ${
+        isAndroidBrowser()
+          ? `<a id="btn-web-banner-play" href="${escapeHtml(playLink('webapp'))}" target="_blank" rel="noopener" class="btn-secondary tap-target">▶ ${escapeHtml(t(lang, 'web_banner_cta'))}</a>`
+          : ''
+      }
+      <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'web_banner_owner'))}</div>
+    </div>`;
+}
+
+/** At most one gentle card on the customer list: weekly backup reminder, or a one-time rating ask. */
+function renderNudgeCard(lang) {
+  if (isSupplierBook() || uiState.searchQuery || uiState.riskFilter !== 'Semua') return '';
+  const nudge = activeNudge(appState, new Date(), { inPlayApp: uiState.inPlayApp });
+  if (!nudge) return '';
+  const isBackup = nudge === 'backup';
+  return `
+    <div style="padding:12px 16px 0;">
+      <div id="nudge-card" data-nudge="${nudge}" role="status" style="background:${isBackup ? 'var(--amber-light)' : 'var(--primary-light)'}; border-radius:var(--radius-sm); padding:12px 14px; display:flex; flex-direction:column; gap:8px;">
+        <div style="font-size:14px; font-weight:700; color:var(--text);">${isBackup ? '💾' : '⭐'} ${escapeHtml(t(lang, isBackup ? 'nudge_backup_title' : 'nudge_rate_title'))}</div>
+        <div style="font-size:13px; color:var(--text2); line-height:1.5;">${escapeHtml(t(lang, isBackup ? 'nudge_backup_body' : 'nudge_rate_body'))}</div>
+        <div style="display:flex; gap:8px;">
+          ${
+            isBackup
+              ? `<button type="button" id="btn-nudge-backup" class="btn-primary" style="flex:1;">${escapeHtml(t(lang, 'nudge_backup_cta'))}</button>`
+              : `<a id="btn-nudge-rate" href="${escapeHtml(PLAY_LISTING_URL)}" target="_blank" rel="noopener" class="btn-primary tap-target" style="flex:1;">${escapeHtml(t(lang, 'nudge_rate_cta'))}</a>`
+          }
+          <button type="button" id="btn-nudge-later" class="btn-secondary" style="width:auto; min-width:96px;">${escapeHtml(t(lang, 'nudge_later'))}</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderCustomerListScreen(lang, ledger) {
@@ -461,6 +543,7 @@ function renderCustomerListScreen(lang, ledger) {
              </div>`
           : ''
       }
+      ${renderNudgeCard(lang)}
       ${renderDueTodaySection(lang, ledger)}
 
       <div style="flex:1; padding:10px 16px 18px; display:flex; flex-direction:column; gap:8px;">
@@ -814,15 +897,17 @@ function renderReminderScreen(lang, customer) {
         nama: customer.name,
         jumlah: customer.balance,
         warung: w.name,
-        tanggal: (customer.payPlan && customer.payPlan.date) || customer.nextDueDate || ''
+        tanggal: (customer.payPlan && customer.payPlan.date) || customer.nextDueDate || '',
+        shareLine: shareLineEnabled(appState)
       })
     : composeReminder(customer, activeTone);
 
-  const currentMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : generatedMsg;
+  const sOpts = shareOpts(messageSurface());
+  const currentMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage, sOpts) : generatedMsg;
   const qris = !isSupplierBook() ? qrisDataUrl() : null;
   const qrisOn = Boolean(qris && uiState.attachQris);
-  const shownMsg = qrisOn ? withQrisLine(currentMsg) : currentMsg;
-  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, shownMsg);
+  const shownMsg = qrisOn ? withQrisLine(currentMsg, sOpts) : currentMsg;
+  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, shownMsg, sOpts);
   const firstName = customer.name.split(' ')[0] || customer.name;
 
   const pillBg =
@@ -963,7 +1048,8 @@ function composeReminder(customer, tone) {
     hari: customer.daysOverdue,
     warung: wb().warung.name,
     tanggal: customer.nextDueDate || '',
-    customTemplate: useCustom ? appState.settings.customTemplate : ''
+    customTemplate: useCustom ? appState.settings.customTemplate : '',
+    shareLine: shareLineEnabled(appState)
   });
 }
 
@@ -1025,7 +1111,7 @@ function renderBroadcastScreen(lang, ledger) {
       </div>`;
   } else {
     const msg = composeReminder(current, b.tone);
-    const waHref = buildWaLink(current.phone62 || current.phoneRaw, msg);
+    const waHref = buildWaLink(current.phone62 || current.phoneRaw, msg, shareOpts('reminder'));
     const isSent = sent.has(current.id);
     body = `
       <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
@@ -1163,6 +1249,7 @@ function renderShareCardScreen(lang) {
           <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'card_step_1'))}</div>
           <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'card_step_2'))}</div>
           <div style="font-size:13px; color:var(--text3);">${escapeHtml(t(lang, 'card_step_3'))}</div>
+          <div style="font-size:13px; color:var(--text2); background:var(--amber-light); border-radius:8px; padding:8px 10px; margin-top:4px; line-height:1.5;">🔒 ${escapeHtml(t(lang, 'card_step_privacy'))}</div>
         </div>
 
         <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
@@ -1191,7 +1278,7 @@ function renderReceiptScreen(lang, customer) {
     return renderCustomerDetailScreen(lang, customer);
   }
   const firstName = customer.name.split(' ')[0] || customer.name;
-  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, model.shareText);
+  const waHref = buildWaLink(customer.phone62 || customer.phoneRaw, model.shareText, shareOpts('receipt'));
   const accent = model.isLunas ? 'var(--primary)' : 'var(--amber)';
   return `
     <div class="screen-body" data-screen="receipt">
@@ -1249,6 +1336,57 @@ function renderReceiptScreen(lang, customer) {
         </div>
       </div>
     </div>`;
+}
+
+/** 1.3 counter sign: preview of the printable A4 poster with the warung's own QRIS. */
+function renderSignScreen(lang) {
+  const hasQris = Boolean(qrisDataUrl());
+  return `
+    <div class="screen-body" data-screen="sign">
+      <div class="topbar">
+        <button type="button" class="back-btn" id="btn-back-from-sign" aria-label="${escapeHtml(t(lang, 'back_aria_label'))}">←</button>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:15px; color:var(--text);">${escapeHtml(t(lang, 'sign_title'))}</div>
+          <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'sign_subtitle'))}</div>
+        </div>
+      </div>
+      <div style="padding:16px; display:flex; flex-direction:column; gap:14px; flex:1;">
+        <canvas id="sign-canvas" width="1240" height="1754" role="img" aria-label="${escapeHtml(t(lang, 'sign_title'))}"
+          style="width:100%; max-width:420px; height:auto; align-self:center; border-radius:12px; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.12); background:#FBF8EF;"></canvas>
+        ${
+          hasQris
+            ? ''
+            : `<div style="font-size:13px; color:var(--text2); background:var(--amber-light); border-radius:var(--radius-sm); padding:10px 12px; line-height:1.5;">${escapeHtml(t(lang, 'sign_no_qris_hint'))}</div>`
+        }
+        <div style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'sign_print_hint'))}</div>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
+          <button type="button" id="btn-share-sign" class="btn-primary btn-wa"><span>📤</span><span>${escapeHtml(t(lang, 'sign_share_btn'))}</span></button>
+          <button type="button" id="btn-download-sign" class="btn-secondary"><span>⬇️</span><span>${escapeHtml(t(lang, 'sign_download_btn'))}</span></button>
+          <button type="button" id="btn-back-from-sign-bottom" class="btn-secondary">${escapeHtml(t(lang, 'sign_back_btn'))}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** Decode the stored QRIS picture once per data URL (the sign is redrawn on every render). */
+function signQrisImage() {
+  const src = qrisDataUrl();
+  if (!src || typeof Image === 'undefined') return Promise.resolve(null);
+  if (uiState.signImage && uiState.signImage.src === src) return Promise.resolve(uiState.signImage.img);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      uiState.signImage = { src, img };
+      resolve(img);
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+async function drawSign(canvas) {
+  const img = await signQrisImage();
+  drawSignToCanvas(canvas, buildSignModel(appState, { hasQris: Boolean(img) }), { qrisImage: img });
 }
 
 function renderStatsScreen(lang) {
@@ -1353,7 +1491,8 @@ function templatePreview(template) {
     hari: 21,
     warung: wb().warung.name,
     tanggal: addDaysIsoDate(localIsoDate(new Date()), -7),
-    customTemplate: String(template || '')
+    customTemplate: String(template || ''),
+    shareLine: shareLineEnabled(appState)
   });
 }
 
@@ -1468,6 +1607,8 @@ function renderSettingsScreen(lang) {
           </label>
           <input id="input-qris-file" type="file" accept="image/*" style="display:none;" />
           ${qrisDataUrl() ? `<button type="button" id="btn-delete-qris" class="btn-secondary" style="color:var(--red); border-color:var(--red);">${escapeHtml(t(lang, 'settings_qris_delete_btn'))}</button>` : ''}
+          <div style="font-size:13px; color:var(--text3); line-height:1.5; margin-top:4px;">${escapeHtml(t(lang, 'settings_sign_desc'))}</div>
+          <button type="button" id="btn-open-sign" class="btn-secondary">🖨️ ${escapeHtml(t(lang, 'settings_sign_btn'))}</button>
         </div>
 
         <!-- Multi-warung -->
@@ -1521,6 +1662,40 @@ function renderSettingsScreen(lang) {
           }
         </div>
 
+        <!-- 1.3: the "dicatat rapi dengan Bonrapi" line under messages (Pro may switch it off) -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:10px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_signature_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_signature_desc'))}</div>
+          ${
+            isProActive(appState)
+              ? `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                   <span style="font-size:13px; font-weight:600; color:var(--text); flex:1;">${escapeHtml(t(lang, 'settings_signature_label'))}</span>
+                   <button type="button" id="btn-toggle-signature" class="btn-secondary" style="width:auto; min-width:80px;" aria-pressed="${s.shareLine !== false}">
+                     ${escapeHtml(s.shareLine !== false ? t(lang, 'settings_signature_on') : t(lang, 'settings_signature_off'))}
+                   </button>
+                 </div>`
+              : `<div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'settings_signature_free_note'))}</div>`
+          }
+        </div>
+
+        <!-- 1.3: word of mouth + feedback -->
+        <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
+            ${escapeHtml(t(lang, 'settings_share_title'))}
+          </div>
+          <div style="font-size:13px; color:var(--text3); line-height:1.5;">${escapeHtml(t(lang, 'settings_invite_desc'))}</div>
+          <a id="btn-invite-warung" href="${escapeHtml(inviteLink())}" target="_blank" rel="noopener noreferrer" class="btn-primary btn-wa tap-target">🤝 ${escapeHtml(t(lang, 'settings_invite_btn'))}</a>
+          ${
+            uiState.inPlayApp
+              ? `<a id="btn-settings-rate" href="${escapeHtml(PLAY_LISTING_URL)}" target="_blank" rel="noopener" class="btn-secondary tap-target">⭐ ${escapeHtml(t(lang, 'settings_rate_btn'))}</a>`
+              : ''
+          }
+          <a id="btn-feedback" href="mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(`Masukan Bonrapi ${APP_VERSION}`)}" class="btn-secondary tap-target">✉️ ${escapeHtml(t(lang, 'settings_feedback_btn'))}</a>
+          <div style="font-size:12px; color:var(--text3);">${escapeHtml(t(lang, 'settings_feedback_note', { email: FEEDBACK_EMAIL }))}</div>
+        </div>
+
         <!-- Demo Data Loader -->
         <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
           <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
@@ -1538,6 +1713,16 @@ function renderSettingsScreen(lang) {
         <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px; display:flex; flex-direction:column; gap:8px;">
           <div style="font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase;">
             ${escapeHtml(t(lang, 'settings_backup_title'))}
+          </div>
+          <div id="backup-status" style="font-size:13px; color:var(--text2); line-height:1.5;">
+            ${escapeHtml(s.lastExportAt ? t(lang, 'settings_last_export', { waktu: formatDateTimeShort(s.lastExportAt) }) : t(lang, 'settings_never_exported'))}
+            ${
+              uiState.storagePersisted === true
+                ? `<br>${escapeHtml(t(lang, 'settings_storage_protected'))}`
+                : uiState.storagePersisted === false
+                  ? `<br>${escapeHtml(t(lang, 'settings_storage_unprotected'))}`
+                  : ''
+            }
           </div>
           <button type="button" id="btn-export-json" class="btn-secondary">
             ⬇️ ${escapeHtml(t(lang, 'settings_export_json'))}
@@ -1572,6 +1757,7 @@ function renderSettingsScreen(lang) {
           <a href="./privacy.html" class="tap-target" style="display:inline-flex; align-items:center; justify-content:center; color:var(--primary-dark); font-weight:600; margin-top:4px; text-decoration:underline;">
             ${escapeHtml(t(lang, 'settings_privacy_link'))}
           </a>
+          <p style="margin-top:4px;">Bonrapi ${APP_VERSION}</p>
         </div>
       </div>
     </div>
@@ -1950,7 +2136,8 @@ function renderBottomNav(lang) {
         .map((item) => {
           const active =
             uiState.screen === item.id ||
-            (['detail', 'reminder', 'card', 'broadcast', 'receipt', 'stats'].includes(uiState.screen) && item.id === 'list');
+            (['detail', 'reminder', 'card', 'broadcast', 'receipt', 'stats'].includes(uiState.screen) && item.id === 'list') ||
+            (uiState.screen === 'sign' && item.id === 'settings');
           return `
             <button type="button" class="bottom-nav-btn ${active ? 'active' : ''}" data-nav="${item.id}">
               <span class="bottom-nav-icon" aria-hidden="true">${item.icon}</span>
@@ -1991,6 +2178,8 @@ export function renderApp() {
     screenHtml = renderStatsScreen(lang);
   } else if (uiState.screen === 'settings') {
     screenHtml = renderSettingsScreen(lang);
+  } else if (uiState.screen === 'sign') {
+    screenHtml = renderSignScreen(lang);
   } else {
     screenHtml = renderCustomerListScreen(lang, ledger);
   }
@@ -2036,6 +2225,10 @@ export function renderApp() {
       } catch { /* model invalid: screen already fell back to detail */ }
     }
   }
+  if (uiState.screen === 'sign') {
+    const canvas = root.querySelector('#sign-canvas');
+    if (canvas) drawSign(canvas).catch((err) => console.error('Sign draw failed:', err));
+  }
 
   bindEvents(selectedCustomer, lang);
 }
@@ -2076,6 +2269,9 @@ function bindEvents(selectedCustomer, lang) {
       });
       uiState.screen = 'list';
       renderApp();
+      requestPersistentStorage().then((v) => {
+        uiState.storagePersisted = v;
+      });
     });
   }
 
@@ -2625,9 +2821,10 @@ function bindEvents(selectedCustomer, lang) {
       const qris = qrisDataUrl();
       if (!qris) return;
       const waHref = sendWaQrisBtn.getAttribute('data-wa-href') || '';
-      const baseMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage) : composeReminder(selectedCustomer, uiState.reminderTone || 'sopan');
+      const sOpts = shareOpts('reminder');
+      const baseMsg = uiState.messageEdited ? ensureShareLine(uiState.customMessage, sOpts) : composeReminder(selectedCustomer, uiState.reminderTone || 'sopan');
       try {
-        const payload = buildQrisSharePayload({ message: baseMsg, qrisDataUrl: qris, warungName: wb().warung.name });
+        const payload = buildQrisSharePayload({ message: baseMsg, qrisDataUrl: qris, warungName: wb().warung.name, shareOpts: sOpts });
         const res = await shareReminderWithQris(payload, { waHref });
         if (res.method === 'cancelled') return;
         uiState.qrisFallbackHint = res.method === 'fallback';
@@ -2683,14 +2880,15 @@ function bindEvents(selectedCustomer, lang) {
     reminderTextarea.addEventListener('input', (e) => {
       uiState.customMessage = e.target.value;
       uiState.messageEdited = true;
-      const fullMsg = ensureShareLine(uiState.customMessage);
+      const sOpts = shareOpts(messageSurface());
+      const fullMsg = ensureShareLine(uiState.customMessage, sOpts);
       const previewBubble = root.querySelector('#wa-bubble-preview-text');
       if (previewBubble) {
         previewBubble.innerHTML = formatWaBoldHtml(fullMsg);
       }
       const waLinkEl = root.querySelector('#btn-send-wa-link');
       if (waLinkEl) {
-        waLinkEl.setAttribute('href', buildWaLink(selectedCustomer.phone62 || selectedCustomer.phoneRaw, fullMsg));
+        waLinkEl.setAttribute('href', buildWaLink(selectedCustomer.phone62 || selectedCustomer.phoneRaw, fullMsg, sOpts));
       }
     });
   }
@@ -2873,10 +3071,80 @@ function bindEvents(selectedCustomer, lang) {
   const exportJsonBtn = root.querySelector('#btn-export-json');
   if (exportJsonBtn) {
     exportJsonBtn.addEventListener('click', () => {
-      const json = exportBackupJson(appState, { photos: uiState.photos });
-      triggerFileDownload(json, 'bonrapi-cadangan.json', 'application/json');
+      saveBackupFile();
+      renderApp();
     });
   }
+
+  // 1.3 nudges on the customer list (backup reminder / one-time rating ask)
+  const setNudges = (patch) => {
+    appState = updateSettings(appState, { nudges: { ...appState.settings.nudges, ...patch } });
+  };
+  const nudgeBackupBtn = root.querySelector('#btn-nudge-backup');
+  if (nudgeBackupBtn) {
+    nudgeBackupBtn.addEventListener('click', () => {
+      saveBackupFile();
+      renderApp();
+    });
+  }
+  const nudgeLaterBtn = root.querySelector('#btn-nudge-later');
+  if (nudgeLaterBtn) {
+    nudgeLaterBtn.addEventListener('click', () => {
+      const card = root.querySelector('#nudge-card');
+      const now = new Date().toISOString();
+      if (card && card.getAttribute('data-nudge') === 'rate') setNudges({ rateSnoozedAt: now });
+      else setNudges({ backupSnoozedAt: now });
+      renderApp();
+    });
+  }
+  root.querySelectorAll('#btn-nudge-rate, #btn-settings-rate').forEach((a) => {
+    a.addEventListener('click', () => {
+      // let the link open the Play listing first, then never ask again
+      setTimeout(() => {
+        setNudges({ rate: 'done' });
+        renderApp();
+      }, 0);
+    });
+  });
+
+  const toggleSignatureBtn = root.querySelector('#btn-toggle-signature');
+  if (toggleSignatureBtn) {
+    toggleSignatureBtn.addEventListener('click', () => {
+      appState = updateSettings(appState, { shareLine: appState.settings.shareLine === false });
+      renderApp();
+    });
+  }
+
+  // 1.3 counter sign
+  const openSignBtn = root.querySelector('#btn-open-sign');
+  if (openSignBtn) {
+    openSignBtn.addEventListener('click', () => {
+      uiState.screen = 'sign';
+      renderApp();
+    });
+  }
+  root.querySelectorAll('#btn-back-from-sign, #btn-back-from-sign-bottom').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      uiState.screen = 'settings';
+      renderApp();
+    });
+  });
+  const signAction = async (forceDownload) => {
+    const canvas = root.querySelector('#sign-canvas');
+    if (!canvas) return;
+    try {
+      const img = await signQrisImage();
+      const model = buildSignModel(appState, { hasQris: Boolean(img) });
+      drawSignToCanvas(canvas, model, { qrisImage: img });
+      await shareOrDownloadSign(canvas, model, { forceDownload });
+    } catch (err) {
+      console.error('Sign share failed:', err);
+    }
+  };
+  const shareSignBtn = root.querySelector('#btn-share-sign');
+  if (shareSignBtn) shareSignBtn.addEventListener('click', () => signAction(false));
+  const downloadSignBtn = root.querySelector('#btn-download-sign');
+  if (downloadSignBtn) downloadSignBtn.addEventListener('click', () => signAction(true));
 
   const importJsonInput = root.querySelector('#input-import-json');
   if (importJsonInput) {
@@ -3174,7 +3442,26 @@ function bindEvents(selectedCustomer, lang) {
 
 }
 
+/**
+ * Inside the Play-installed app (TWA) the first page load has an android-app:// referrer. The
+ * answer is kept in sessionStorage (per tab, never synced to Chrome's own tabs) so a reload in the
+ * same session still knows; Play Billing being available also proves it (see initApp).
+ */
+function detectPlayApp() {
+  try {
+    const ref = typeof document !== 'undefined' ? String(document.referrer || '') : '';
+    if (ref.startsWith('android-app://com.sakredstudio.kilat')) {
+      sessionStorage.setItem('kilat.inPlayApp', '1');
+      return true;
+    }
+    return sessionStorage.getItem('kilat.inPlayApp') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export async function initApp() {
+  uiState.inPlayApp = detectPlayApp();
   await loadDictionaries();
   appState = loadState();
   // First run: show setup with an empty ledger. Demo data is opt-in (empty-list CTA / Settings),
@@ -3205,6 +3492,7 @@ export async function initApp() {
   try {
     uiState.billingAvailable = await isPlayBillingAvailable();
     if (uiState.billingAvailable) {
+      uiState.inPlayApp = true;
       const [price, owned] = await Promise.all([getProPrice(), hasProPurchase()]);
       uiState.proPrice = price;
       if (owned && !appState.settings.isPro) appState = updateSettings(appState, { isPro: true });
@@ -3212,6 +3500,13 @@ export async function initApp() {
     }
   } catch {
     /* billing is optional */
+  }
+
+  // The ledger lives only on this phone: once it is a real shop's book, ask Chrome not to clear it
+  // when storage runs low. Not on a first visit (that is often someone who just tapped a link).
+  if (appState.settings.hasCompletedSetup) {
+    uiState.storagePersisted = await requestPersistentStorage();
+    if (uiState.screen === 'settings') renderApp();
   }
 
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {

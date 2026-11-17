@@ -83,7 +83,7 @@ test('share-card: drawShareCardToCanvas renders 1080x1350 dimensions and draws w
 test('share-card: badge carries the Bonrapi mark (no lightning glyph) and the watermark names Bonrapi', () => {
   const state = seedDemoData(createInitialState(), null, { count: 6, referenceDate: '2026-10-24T00:00:00.000Z' });
   const model = buildShareCardModel(state, '2026-10-24');
-  assert.equal(WATERMARK_TEXT, 'Dibuat dengan Bonrapi · kilat.sakredstudio.ca');
+  assert.equal(WATERMARK_TEXT, 'Dibuat dengan Bonrapi · bonrapi.sakredstudio.ca/k');
 
   // No mark loaded (Node, or the image failed): label only, nothing drawn as an image
   const plain = createMockCanvas();

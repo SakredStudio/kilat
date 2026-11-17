@@ -28,11 +28,11 @@
     <a class="back" href="./">← Bonrapi</a>
 
     <h1>Kebijakan Privasi · Privacy Policy</h1>
-    <div class="meta">Bonrapi oleh Sakred Studio · Berlaku sejak 2026-10-24</div>
+    <div class="meta">Bonrapi oleh Sakred Studio (17899181 Canada Inc.) · Berlaku sejak 2026-10-24 · Diperbarui 2026-11-17 (versi 1.3)</div>
 
     <div class="card">
-      <p><strong>Versi singkat:</strong> semua yang Anda catat tersimpan di HP ini. Bonrapi tidak punya server, tidak ada akun, tidak ada pelacakan, dan tidak pernah memindahkan uang. Bonrapi hanya mencatat.</p>
-      <p><strong>Short version:</strong> everything you enter stays on your phone. Bonrapi has no server, no account, no analytics, and never moves money. It only keeps records.</p>
+      <p><strong>Versi singkat:</strong> semua yang Anda catat tersimpan di HP ini. Tidak ada akun, tidak ada pelacakan di aplikasi, dan Bonrapi tidak pernah memindahkan uang. Satu-satunya yang bisa sampai ke server kami adalah cadangan cloud terenkripsi, dan hanya jika Anda sendiri mengaktifkannya. Bonrapi hanya mencatat.</p>
+      <p><strong>Short version:</strong> everything you enter stays on your phone. No account, no tracking in the app, and Bonrapi never moves money. The only thing that can reach our server is the encrypted cloud backup, and only if you switch it on yourself. It only keeps records.</p>
     </div>
 
     <h2>Apa yang disimpan aplikasi</h2>
@@ -42,12 +42,12 @@
       <li>Catatan utang dan pembayaran: jumlah, tanggal, catatan.</li>
       <li>Pengaturan: nada pengingat, mode gelap, status Pro.</li>
     </ul>
-    <p>Semua data ini disimpan di penyimpanan lokal browser (<code>localStorage</code>) di perangkat Anda. Tidak ada yang diunggah ke mana pun. Jika Anda menghapus aplikasi atau membersihkan data situs, data ikut hilang, kecuali Anda sudah menyimpan cadangan lewat <em>Pengaturan → Ekspor Cadangan JSON</em>.</p>
+    <p>Semua data ini disimpan di penyimpanan lokal browser (<code>localStorage</code>) di perangkat Anda. Tidak ada yang diunggah ke mana pun. Bonrapi meminta browser agar penyimpanan ini tidak dibersihkan otomatis saat HP kekurangan ruang. Jika Anda menghapus aplikasi atau membersihkan data situs, data tetap ikut hilang, kecuali Anda sudah menyimpan cadangan lewat <em>Pengaturan → Ekspor Cadangan JSON</em>. Aplikasi mengingatkan Anda seminggu sekali untuk menyimpan file cadangan.</p>
 
     <h2>Apa yang keluar dari HP Anda</h2>
     <ul>
-      <li><strong>Pengingat WhatsApp.</strong> Saat Anda menekan tombol kirim, Bonrapi hanya membuka aplikasi WhatsApp dengan teks pesan yang sudah disiapkan. Tidak ada yang terkirim sampai Anda menekan Kirim di dalam WhatsApp. Pesan berisi nama pelanggan, nama warung, jumlah catatan, lama hari, dan baris pendek "— Bonrapi" dengan tautan aplikasi.</li>
-      <li><strong>Kartu Ringkasan.</strong> Gambar PNG dibuat di HP Anda. Ke mana Anda membagikannya sepenuhnya pilihan Anda.</li>
+      <li><strong>Pengingat WhatsApp.</strong> Saat Anda menekan tombol kirim, Bonrapi hanya membuka aplikasi WhatsApp dengan teks pesan yang sudah disiapkan. Tidak ada yang terkirim sampai Anda menekan Kirim di dalam WhatsApp. Pesan berisi nama pelanggan, nama warung, jumlah catatan, lama hari, dan baris pendek "— dicatat rapi dengan Bonrapi" dengan tautan ke halaman bonrapi.sakredstudio.ca (Bonrapi Pro bisa mematikan baris ini).</li>
+      <li><strong>Kartu Ringkasan, bukti pembayaran, dan poster kasir.</strong> Gambar PNG dibuat di HP Anda. Ke mana Anda membagikannya sepenuhnya pilihan Anda. Kartu Ringkasan memuat nama pelanggan: bagikan hanya ke keluarga atau rekan warung.</li>
       <li><strong>Cadangan.</strong> Ekspor membuat berkas di perangkat Anda. Di mana Anda menyimpan atau membagikan berkas itu adalah urusan Anda.</li>
     </ul>
 
@@ -64,13 +64,15 @@
       <li>Server kami hanya menyimpan data terenkripsi (<em>ciphertext</em>) beserta salt dan IV acak, di bawah kode brankas acak. Server tidak pernah menerima kata sandi, nama pelanggan, nomor telepon, atau jumlah. Kami tidak bisa membuka cadangan Anda. Lupa kata sandi berarti cadangan tidak bisa dipulihkan oleh siapa pun.</li>
       <li>Tidak ada akun, email, atau nomor HP yang dikaitkan dengan brankas. Kode brankas adalah satu-satunya pengenal.</li>
       <li>Anda bisa menghapus cadangan di cloud kapan saja dari Pengaturan. Data di HP tidak terpengaruh.</li>
-      <li>Di rilis ini server cadangan belum diaktifkan; aplikasi menampilkan <em>"Belum tersedia"</em>.</li>
     </ul>
+
+    <h2>Halaman tautan bonrapi.sakredstudio.ca</h2>
+    <p>Tautan di akhir pesan dan bukti membuka halaman yang menjelaskan Bonrapi kepada penerima (misalnya: Bonrapi hanya mencatat dan bukan aplikasi pinjaman). Halaman itu hanya menghitung jumlah kunjungan per hari dan per jenis tautan (pengingat, bukti, supplier, dan seterusnya). Tidak ada cookie, alamat IP, atau pengenal yang disimpan, dan isi pesan Anda tidak pernah sampai ke halaman itu. Tombol Google Play di halaman itu memakai kode kampanye (UTM) supaya Google Play bisa menghitung pemasangan per jenis tautan, tanpa data pribadi.</p>
 
     <h2>Uang</h2>
     <p>Bonrapi adalah buku catatan. Bonrapi tidak menerima, menyimpan, mentransfer, atau menagih uang, dan tidak terhubung ke bank atau dompet digital. Gambar QRIS yang Anda simpan hanyalah gambar yang Anda bagikan sendiri. Pembayaran terjadi di luar aplikasi, antara Anda dan pelanggan atau supplier.</p>
 
-    <h2>Tanpa pelacakan</h2>
+    <h2>Tanpa pelacakan di aplikasi</h2>
     <p>Tidak ada analitik, tidak ada SDK iklan, tidak ada cookie, tidak ada font atau skrip pihak ketiga saat berjalan. Aplikasi bekerja sepenuhnya offline setelah pemuatan pertama.</p>
 
     <h2>Anak-anak</h2>
@@ -83,11 +85,12 @@
 
     <h2>In English</h2>
     <p><strong>What the app stores:</strong> your shop name, owner name and WhatsApp number (if entered); the customers you add (name, phone number, note); credit and payment records (amount, date, note); and your settings. All of it lives in your browser's local storage on this device and is never uploaded.</p>
-    <p><strong>What leaves your phone:</strong> only the WhatsApp message you choose to send (the app opens WhatsApp with a pre-written text; nothing is sent until you press Send there), the summary card image you choose to share, and backup files you export.</p>
+    <p><strong>What leaves your phone:</strong> only the WhatsApp message you choose to send (the app opens WhatsApp with a pre-written text; nothing is sent until you press Send there; it ends with "— dicatat rapi dengan Bonrapi" and a link to bonrapi.sakredstudio.ca, which Pro can switch off), the card, receipt and poster images you choose to share, and backup files you export. Bonrapi asks the browser not to clear its storage when the phone runs low on space, and reminds you weekly to save a backup file.</p>
     <p><strong>Photos and QRIS:</strong> a bon photo per credit entry and your shop's static QRIS image are shrunk on the phone and kept in the browser's IndexedDB on this device, never uploaded. Attaching the QRIS to a reminder only shares the image through the phone's share sheet (or downloads it); the customer pays you directly and Bonrapi is not involved in that payment.</p>
-    <p><strong>Encrypted cloud backup (Pro+, optional, off by default):</strong> if you create a vault, the whole ledger is encrypted on your phone with your passphrase (PBKDF2 200,000 iterations + AES-GCM 256) before upload. The server only stores ciphertext under a random vault code: no passphrase, no names, no numbers, no account. We cannot open your backup; a lost passphrase cannot be recovered. You can delete the cloud copy at any time. In this release the backup server is not enabled yet and the app shows "Not available yet".</p>
+    <p><strong>Encrypted cloud backup (Pro+, optional, off by default):</strong> if you create a vault, the whole ledger is encrypted on your phone with your passphrase (PBKDF2 200,000 iterations + AES-GCM 256) before upload. The server only stores ciphertext under a random vault code: no passphrase, no names, no numbers, no account. We cannot open your backup; a lost passphrase cannot be recovered. You can delete the cloud copy at any time.</p>
+    <p><strong>The link page (bonrapi.sakredstudio.ca):</strong> the link at the end of messages and receipts opens a page that explains Bonrapi to the person who received it. The page only counts visits per day and per link type (reminder, receipt, supplier, and so on). No cookies, IP addresses or identifiers are stored, and the content of your messages never reaches it. Its Google Play button carries a campaign code (UTM) so Google Play can count installs per link type, with no personal data.</p>
     <p><strong>Money:</strong> Bonrapi is a ledger. It never receives, holds, transfers or collects money and is not connected to any bank or e-wallet. A stored QRIS image is just a picture you choose to share.</p>
-    <p><strong>No tracking:</strong> no analytics, no ads, no cookies, no third-party scripts.</p>
+    <p><strong>No tracking in the app:</strong> no analytics, no ads, no cookies, no third-party scripts.</p>
     <p><strong>Contact:</strong> sakredfamily@gmail.com</p>
   </main>
 </body>
